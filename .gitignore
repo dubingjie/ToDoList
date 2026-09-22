@@ -1,0 +1,34 @@
+# Gradle
+.gradle/
+**/build/
+.cxx/
+externalNativeBuild/
+.kotlin/
+
+# Android Studio / IDEA
+.idea/
+*.iml
+captures/
+.navigation/
+
+# 本地配置
+local.properties
+
+# 构建产物
+*.apk
+*.ap_
+*.aab
+output-metadata.json
+
+# 签名密钥（切勿提交）
+*.jks
+*.keystore
+key.properties
+
+# 调试产物
+*.hprof
+emulator-*.log
+
+# Windows 系统文件
+Thumbs.db
+desktop.ini
