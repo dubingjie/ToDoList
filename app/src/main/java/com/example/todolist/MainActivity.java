@@ -39,7 +39,6 @@ public class MainActivity extends Activity {
     private BroadcastReceiver taskChangedReceiver;
     private int savedScrollY;
     private ScrollView activeScroll;
-    private int monthTransition;
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
     @Override public void onCreate(Bundle state) {
@@ -176,14 +175,21 @@ public class MainActivity extends Activity {
         body.addView(weekdays);
 
         if (homeCalendarExpanded) {
-            LocalDate first = month.atDay(1);
+            CalendarPager pager = new CalendarPager(this, delta -> {
+                month = month.plusMonths(delta);
+                selected = month.atDay(1);
+                render();
+            });
+            for (int monthOffset = -1; monthOffset <= 1; monthOffset++) {
+            YearMonth displayMonth = month.plusMonths(monthOffset);
+            LocalDate first = displayMonth.atDay(1);
             LocalDate start = first.minusDays(first.getDayOfWeek().getValue() % 7);
             LinearLayout monthRows = column(); monthRows.setPadding(0, 0, 0, 0); monthRows.setBaselineAligned(false);
             for (int rowIndex = 0; rowIndex < 6; rowIndex++) {
                 LinearLayout week = row(); week.setPadding(0, 0, 0, 0); week.setGravity(Gravity.CENTER); week.setBaselineAligned(false); week.setBackgroundColor(color(dark ? "#26362C" : "#F5F8F2"));
                 for (int col = 0; col < 7; col++) {
                     LocalDate date = start.plusDays(rowIndex * 7L + col);
-                    boolean inMonth = YearMonth.from(date).equals(month);
+                    boolean inMonth = YearMonth.from(date).equals(displayMonth);
                     int dayColor = !inMonth ? color(dark ? "#526158" : "#B7C0B8") : (date.equals(selected) ? accent : ink);
                     TextView cell = text(String.valueOf(date.getDayOfMonth()) + (MonthGrid.tasksOn(tasks, date).isEmpty() ? "" : "\n•"), 15, dayColor, true);
                     cell.setGravity(Gravity.CENTER); cell.setMaxLines(2); cell.setContentDescription(date.toString());
@@ -210,37 +216,14 @@ public class MainActivity extends Activity {
                     GradientDrawable circle = box(circleFill, 30); circle.setShape(GradientDrawable.OVAL);
                     cell.setBackground(circleFill == Color.TRANSPARENT ? null : circle);
                     cell.setOnClickListener(v -> { selected = date; month = YearMonth.from(date); render(); });
-                    cell.setOnTouchListener(new View.OnTouchListener() {
-                        float downX;
-                        @Override public boolean onTouch(View v, MotionEvent e) {
-                            if (e.getActionMasked() == MotionEvent.ACTION_DOWN) { downX = e.getX(); return false; }
-                            if (e.getActionMasked() == MotionEvent.ACTION_UP && Math.abs(e.getX() - downX) > dp(72)) {
-                                swipeMonth(e.getX() < downX ? 1 : -1, monthRows); return true;
-                            }
-                            return false;
-                        }
-                    });
                     LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(circleSize, circleSize); p.setMargins(dp(1), dp(1), dp(1), dp(1));
                     week.addView(cell, p);
                 }
                 monthRows.addView(week, new LinearLayout.LayoutParams(-1, dp(52)));
             }
-            monthRows.setOnTouchListener(new View.OnTouchListener() {
-                float downX;
-                @Override public boolean onTouch(View v, MotionEvent e) {
-                    if (e.getActionMasked() == MotionEvent.ACTION_DOWN) { downX = e.getX(); return true; }
-                    if (e.getActionMasked() == MotionEvent.ACTION_UP && Math.abs(e.getX() - downX) > dp(72)) {
-                        swipeMonth(e.getX() < downX ? 1 : -1, v); return true;
-                    }
-                    return true;
-                }
-            });
-            body.addView(monthRows, new LinearLayout.LayoutParams(-1, dp(312)));
-            if (monthTransition != 0) {
-                int direction = monthTransition; monthTransition = 0;
-                monthRows.setTranslationX(direction * getResources().getDisplayMetrics().widthPixels);
-                monthRows.animate().translationX(0).setDuration(220).start();
+            pager.addView(monthRows);
             }
+            body.addView(pager, new LinearLayout.LayoutParams(-1, dp(312)));
         } else {
             LocalDate sunday = LocalDate.now().minusDays(LocalDate.now().getDayOfWeek().getValue() % 7);
             LinearLayout week = row(); week.setGravity(Gravity.CENTER);
@@ -274,13 +257,6 @@ public class MainActivity extends Activity {
             for (Task t : tasks) if (t.deletedAt == null && t.completedAt == null) { addTask(body, t); pending++; }
             if (pending == 0) { TextView empty = text("暂无待办", 13, muted, false); empty.setGravity(Gravity.CENTER); body.addView(empty, new LinearLayout.LayoutParams(-1, dp(54))); }
         }
-    }
-    private void swipeMonth(int delta, View current) {
-        if (monthTransition != 0) return;
-        current.animate().translationX(-delta * getResources().getDisplayMetrics().widthPixels).setDuration(180).withEndAction(() -> {
-            month = delta > 0 ? month.plusMonths(1) : month.minusMonths(1);
-            selected = month.atDay(1); monthTransition = delta; render();
-        }).start();
     }
     private LinearLayout listControls() {
         LinearLayout controls = column(); controls.setPadding(dp(16), dp(4), dp(16), dp(6));

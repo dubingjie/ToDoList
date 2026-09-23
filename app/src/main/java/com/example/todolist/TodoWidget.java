@@ -51,6 +51,11 @@ public class TodoWidget extends AppWidgetProvider {
         List<Task> visible = new ArrayList<>();
         java.time.LocalDate today = java.time.LocalDate.now();
         for (Task task : all) if (TaskDates.visibleInTodayList(task, today)) visible.add(task);
+        visible.sort(Comparator
+            .comparing((Task task) -> task.completedAt != null)
+            .thenComparing((Task task) -> task.priority, Comparator.reverseOrder())
+            .thenComparingLong(task -> task.createdAt)
+            .thenComparingLong(task -> task.id));
         for (int id : ids) {
             Bundle options = m.getAppWidgetOptions(id);
             if (Build.VERSION.SDK_INT >= 31) {
@@ -91,10 +96,16 @@ public class TodoWidget extends AppWidgetProvider {
                 if (completed) {
                     completedShown++;
                     row.setTextViewText(R.id.widget_check, "✓");
+                    row.setTextColor(R.id.widget_check, 0xFF60736B);
+                    row.setInt(R.id.widget_check, "setBackgroundResource", R.drawable.widget_check_completed);
                     row.setInt(R.id.widget_text, "setPaintFlags", Paint.STRIKE_THRU_TEXT_FLAG);
                     row.setContentDescription(R.id.widget_check, "恢复待办：" + t.title);
                 } else {
-                    row.setTextViewText(R.id.widget_check, "□");
+                    row.setTextViewText(R.id.widget_check, "");
+                    int checkBackground = t.priority >= 2 ? R.drawable.widget_check_high : t.priority == 1 ? R.drawable.widget_check_medium : R.drawable.widget_check_low;
+                    int checkColor = t.priority >= 2 ? 0xFFE05252 : t.priority == 1 ? 0xFFE39A3B : 0xFF4B86C5;
+                    row.setTextColor(R.id.widget_check, checkColor);
+                    row.setInt(R.id.widget_check, "setBackgroundResource", checkBackground);
                     row.setContentDescription(R.id.widget_check, "完成：" + t.title);
                 }
                 row.setOnClickPendingIntent(R.id.widget_text, open);
