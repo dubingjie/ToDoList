@@ -59,7 +59,7 @@ public class MainActivity extends Activity {
     @Override protected void onSaveInstanceState(Bundle b) { super.onSaveInstanceState(b); b.putString("page", page); b.putString("filter", filter); b.putString("month", month.toString()); b.putString("selected", selected.toString()); b.putString("exportMonth", pendingExportMonth.toString()); b.putBoolean("homeCalendarExpanded", homeCalendarExpanded); }
     @Override protected void onDestroy() { main.removeCallbacksAndMessages(null); if (taskChangedReceiver != null) unregisterReceiver(taskChangedReceiver); super.onDestroy(); }
     private void colors() {
-        bg = color(dark ? "#121C18" : "#F7F8F2"); surface = color(dark ? "#1D2B24" : "#FFFFFF");
+        bg = color(dark ? "#121C18" : "#F9FAF6"); surface = color(dark ? "#1D2B24" : "#FFFFFF");
         ink = color(dark ? "#E7EEE6" : "#20392D"); muted = color(dark ? "#A0B0A5" : "#7A887D");
         accent = color(dark ? "#A4D7AD" : "#29664B"); soft = color(dark ? "#30483A" : "#E9EFE1"); border = color(dark ? "#34463A" : "#E6EAE0");
     }
@@ -112,7 +112,7 @@ public class MainActivity extends Activity {
         if (calendar) shell.addView(body, new LinearLayout.LayoutParams(-1, 0, 1));
         else { scroll.addView(body); shell.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1)); scroll.post(() -> scroll.scrollTo(0, savedScrollY)); }
         if (list) homePage(); else if (calendar) calendarPage(); else if (page.equals("统计")) statsPage(); else if (page.equals("回收站")) trashPage(); else settingsPage();
-        LinearLayout nav = row(); nav.setPadding(dp(12), dp(list ? 4 : 10), dp(12), dp(list ? 4 : 12)); nav.setBackgroundColor(surface);
+        LinearLayout nav = row(); nav.setPadding(dp(12), dp(4), dp(12), dp(4)); nav.setBackgroundColor(surface);
         for (String tab : new String[]{"清单", "月历", "统计", "设置"}) {
             String navLabel = tab.equals("月历") ? "月视图" : tab;
             boolean active = tab.equals(page) || (tab.equals("设置") && page.equals("回收站"));
@@ -120,7 +120,7 @@ public class MainActivity extends Activity {
             if (tab.equals("鏈堝巻")) b.setText("月视图");
             b.setGravity(Gravity.CENTER); b.setBackground(box(active ? soft : surface, 14)); b.setOnClickListener(v -> { page = tab; render(); }); nav.addView(b, new LinearLayout.LayoutParams(0, dp(48), 1));
         }
-        shell.addView(nav);
+        shell.addView(nav, new LinearLayout.LayoutParams(-1, dp(56)));
         if (list) {
             TextView fab = text("＋", 34, Color.WHITE, false); fab.setGravity(Gravity.CENTER); fab.setElevation(dp(8));
             fab.setContentDescription("添加待办事项"); fab.setBackground(box(accent, 32)); fab.setOnClickListener(v -> editor(null));
@@ -136,7 +136,8 @@ public class MainActivity extends Activity {
         return view;
     }
     private void homePage() {
-        body.setBackgroundColor(surface);
+        body.setBackgroundColor(bg);
+        int todayBackground = getColor(dark ? R.color.calendar_today_background_dark : R.color.calendar_today_background);
         int circleSize = Math.max(dp(32), Math.min(dp(44), (getResources().getDisplayMetrics().widthPixels - dp(20)) / 7));
         LinearLayout header = row();
         header.setPadding(dp(8), dp(4), dp(8), dp(2));
@@ -147,7 +148,14 @@ public class MainActivity extends Activity {
         TextView widget = text("⌂", 24, ink, false); widget.setGravity(Gravity.CENTER); widget.setContentDescription("添加到桌面");
         widget.setOnClickListener(v -> pinWidget());
         header.addView(widget, new LinearLayout.LayoutParams(dp(44), dp(52)));
-        TextView expand = text(homeCalendarExpanded ? "⌃" : "⌄", 26, ink, false); expand.setGravity(Gravity.CENTER);
+        ImageButton expand = new ImageButton(this);
+        expand.setImageResource(R.drawable.ic_calendar_expand);
+        expand.setImageTintList(ColorStateList.valueOf(ink));
+        expand.setScaleType(ImageView.ScaleType.CENTER);
+        expand.setPadding(0, 0, 0, 0);
+        expand.setRotation(homeCalendarExpanded ? 180f : 0f);
+        expand.setBackground(new android.graphics.drawable.RippleDrawable(
+            ColorStateList.valueOf(soft), null, box(Color.WHITE, 26)));
         expand.setContentDescription(homeCalendarExpanded ? "折叠日历" : "展开日历");
         expand.setOnClickListener(v -> { homeCalendarExpanded = !homeCalendarExpanded; render(); });
         header.addView(expand, new LinearLayout.LayoutParams(dp(56), dp(52)));
@@ -198,7 +206,7 @@ public class MainActivity extends Activity {
                     cell.setBackground(gridBackground);
                     cell.setText(date.equals(LocalDate.now()) ? "今" : String.valueOf(date.getDayOfMonth()));
                     cell.setTextSize(15); cell.setTextColor(date.equals(selected) ? Color.WHITE : dayColor);
-                    int circleFill = date.equals(selected) ? accent : (date.equals(LocalDate.now()) ? soft : Color.TRANSPARENT);
+                    int circleFill = date.equals(selected) ? accent : (date.equals(LocalDate.now()) ? todayBackground : Color.TRANSPARENT);
                     GradientDrawable circle = box(circleFill, 30); circle.setShape(GradientDrawable.OVAL);
                     cell.setBackground(circleFill == Color.TRANSPARENT ? null : circle);
                     cell.setOnClickListener(v -> { selected = date; month = YearMonth.from(date); render(); });
@@ -244,7 +252,7 @@ public class MainActivity extends Activity {
                 GradientDrawable dayBackground = box(date.equals(selected) ? accent : surface, 22);
                 if (date.equals(LocalDate.now())) dayBackground.setStroke(dp(2), accent);
                 cell.setBackground(dayBackground); cell.setElevation(date.equals(selected) ? dp(4) : 0);
-                int circleFill = date.equals(selected) ? accent : (date.equals(LocalDate.now()) ? soft : Color.TRANSPARENT);
+                int circleFill = date.equals(selected) ? accent : (date.equals(LocalDate.now()) ? todayBackground : Color.TRANSPARENT);
                 GradientDrawable circle = box(circleFill, 30); circle.setShape(GradientDrawable.OVAL);
                 cell.setBackground(circleFill == Color.TRANSPARENT ? null : circle);
                 if (!date.equals(selected) && date.equals(LocalDate.now())) cell.setTextColor(accent);
@@ -357,6 +365,31 @@ public class MainActivity extends Activity {
     private void delete(Task t) {
         TodoDb.IO.execute(() -> { TodoDb.get(this).tasks().moveToTrash(t.id, System.currentTimeMillis()); Reminders.cancel(this, t); TodoWidget.updateAll(this); main.post(this::reload); });
     }
+    private TextView timeField(LinearLayout form, String label, TextView clear) {
+        LinearLayout line = row();
+        line.setBackground(box(soft, 12));
+        LinearLayout content = column();
+        content.setPadding(dp(14), dp(10), dp(8), dp(10));
+        content.addView(text(label, 12, muted, false));
+        TextView value = text("未设置 · 点击选择", 14, accent, false);
+        content.addView(value);
+        content.setMinimumHeight(dp(56));
+        line.addView(content, new LinearLayout.LayoutParams(0, -2, 1));
+        clear.setGravity(Gravity.CENTER);
+        clear.setContentDescription("清除" + label);
+        line.addView(clear, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        form.addView(line, new LinearLayout.LayoutParams(-1, -2));
+        return value;
+    }
+    private void onTimeFieldClick(TextView value, View.OnClickListener listener) {
+        LinearLayout content = (LinearLayout) value.getParent();
+        View line = (View) content.getParent();
+        line.setOnClickListener(listener);
+        content.setOnClickListener(listener);
+        for (int i = 0; i < content.getChildCount(); i++) {
+            content.getChildAt(i).setOnClickListener(listener);
+        }
+    }
     private void editor(Task original) {
         Task draft = original == null ? new Task() : original.copy();
         if (original == null) draft.tag = getPreferences(MODE_PRIVATE).getString("defaultTag", "学习");
@@ -367,22 +400,52 @@ public class MainActivity extends Activity {
         space(form, 12); form.addView(text("分类标签", 13, muted, true));
         AutoCompleteTextView tag = new AutoCompleteTextView(this); tag.setSingleLine(); tag.setText(draft.tag); tag.setHint("学习 / 工作 / 生活，也可以自定义"); tag.setFilters(new InputFilter[]{new InputFilter.LengthFilter(20)}); tag.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_dropdown_item_1line, new String[]{"学习", "工作", "生活"})); tag.setThreshold(0); tag.setOnFocusChangeListener((v, focused) -> { if (focused) tag.showDropDown(); }); form.addView(tag);
         space(form, 18);
-        TextView due = button(draft.dueAt == null ? "＋  设置截止时间（可选）" : "截止 " + dateTime(draft.dueAt), false, () -> {});
-        TextView start = button(draft.startAt == null ? "设置开始时间（可选）" : "开始 " + dateTime(draft.startAt), false, () -> {});
-        start.setOnClickListener(v -> {
+        TextView clearStart = text("×", 22, muted, false);
+        TextView start = timeField(form, "开始时间", clearStart);
+        space(form, 8);
+        TextView clearDue = text("×", 22, muted, false);
+        TextView due = timeField(form, "预计完成时间", clearDue);
+        Runnable refreshTimes = () -> {
+            start.setText(draft.startAt == null ? "未设置 · 点击选择" : dateTime(draft.startAt));
+            due.setText(draft.dueAt == null ? "未设置 · 点击选择" : dateTime(draft.dueAt));
+            clearStart.setVisibility(draft.startAt == null ? View.GONE : View.VISIBLE);
+            clearDue.setVisibility(draft.dueAt == null ? View.GONE : View.VISIBLE);
+        };
+        clearStart.setOnClickListener(v -> { draft.startAt = null; refreshTimes.run(); });
+        clearDue.setOnClickListener(v -> { draft.dueAt = null; refreshTimes.run(); });
+        refreshTimes.run();
+        onTimeFieldClick(start, v -> {
             ZonedDateTime current = draft.startAt == null ? ZonedDateTime.now().plusMinutes(15) : Instant.ofEpochMilli(draft.startAt).atZone(ZoneId.systemDefault());
-            new DatePickerDialog(this, (picker, year, m, day) -> new TimePickerDialog(this, (time, hour, minute) -> {
-                draft.startAt = LocalDateTime.of(year, m + 1, day, hour, minute).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(); start.setText("开始 " + dateTime(draft.startAt));
-            }, current.getHour(), current.getMinute(), true).show(), current.getYear(), current.getMonthValue() - 1, current.getDayOfMonth()).show();
-        }); form.addView(start); space(form, 8);
-        form.addView(button("清除开始时间", false, () -> { draft.startAt = null; start.setText("设置开始时间（可选）"); })); space(form, 12);
-        due.setOnClickListener(v -> {
+            new DatePickerDialog(this, (picker, year, m, day) -> {
+                TimePicker time = (TimePicker) getLayoutInflater().inflate(R.layout.start_time_picker, null);
+                time.setIs24HourView(true);
+                time.setHour(current.getHour());
+                time.setMinute(current.getMinute());
+                new AlertDialog.Builder(this).setTitle("开始时间").setView(time)
+                    .setNegativeButton("取消", null)
+                    .setPositiveButton("确定", (dialog, which) -> {
+                        time.clearFocus();
+                        draft.startAt = LocalDateTime.of(year, m + 1, day, time.getHour(), time.getMinute()).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+                        refreshTimes.run();
+                    }).show();
+            }, current.getYear(), current.getMonthValue() - 1, current.getDayOfMonth()).show();
+        });
+        onTimeFieldClick(due, v -> {
             ZonedDateTime current = draft.dueAt == null ? ZonedDateTime.now().plusHours(1) : Instant.ofEpochMilli(draft.dueAt).atZone(ZoneId.systemDefault());
-            new DatePickerDialog(this, (picker, year, m, day) -> new TimePickerDialog(this, (time, hour, minute) -> {
-                draft.dueAt = LocalDateTime.of(year, m + 1, day, hour, minute).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(); due.setText("截止 " + dateTime(draft.dueAt));
-            }, current.getHour(), current.getMinute(), true).show(), current.getYear(), current.getMonthValue() - 1, current.getDayOfMonth()).show();
-        }); form.addView(due); space(form, 8);
-        form.addView(button("清除截止时间", false, () -> { draft.dueAt = null; due.setText("＋  设置截止时间（可选）"); }));
+            new DatePickerDialog(this, (picker, year, m, day) -> {
+                TimePicker time = (TimePicker) getLayoutInflater().inflate(R.layout.start_time_picker, null);
+                time.setIs24HourView(true);
+                time.setHour(current.getHour());
+                time.setMinute(current.getMinute());
+                new AlertDialog.Builder(this).setTitle("预计完成时间").setView(time)
+                    .setNegativeButton("取消", null)
+                    .setPositiveButton("确定", (dialog, which) -> {
+                        time.clearFocus();
+                        draft.dueAt = LocalDateTime.of(year, m + 1, day, time.getHour(), time.getMinute()).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+                        refreshTimes.run();
+                    }).show();
+            }, current.getYear(), current.getMonthValue() - 1, current.getDayOfMonth()).show();
+        });
         space(form, 12); form.addView(text("提前约 15 分钟提醒；系统省电可能使提醒延迟。", 11, muted, false));
         ScrollView sc = new ScrollView(this); sc.addView(form);
         AlertDialog dialog = new AlertDialog.Builder(this).setTitle(original == null ? "记下一件事" : "编辑事项").setView(sc).setNegativeButton("取消", null).setPositiveButton("保存", null).create();
@@ -506,7 +569,7 @@ public class MainActivity extends Activity {
         });
         settingRow("回收站", trashed.size() + " 项", () -> { page = "回收站"; render(); });
         settingRow("导出月历图片", "PNG", this::chooseExportMonth);
-        space(body, 18); body.addView(text("一件一件  2.3", 12, muted, false));
+        space(body, 18); body.addView(text("一件一件  2.6", 12, muted, false));
     }
     private void settingDivider() {
         View line = new View(this); line.setBackgroundColor(border); body.addView(line, new LinearLayout.LayoutParams(-1, dp(1)));
@@ -533,7 +596,7 @@ public class MainActivity extends Activity {
         space(body, 18); body.addView(text("数据管理", 13, muted, true)); space(body, 4);
         settingRow("回收站", trashed.size() + " 项", () -> { page = "回收站"; render(); });
         settingRow("导出月视图", "PNG", this::chooseExportMonth);
-        space(body, 18); TextView version = text("一件一件 · 2.3", 12, muted, false); version.setGravity(Gravity.CENTER); body.addView(version);
+        space(body, 18); TextView version = text("一件一件 · 2.6", 12, muted, false); version.setGravity(Gravity.CENTER); body.addView(version);
     }
     private void chooseDefaultTag() {
         String[] choices = new String[]{"学习", "工作", "生活"};

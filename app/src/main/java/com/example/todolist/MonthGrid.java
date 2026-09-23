@@ -109,7 +109,9 @@ public final class MonthGrid extends ViewGroup {
             shape.setColor(Color.TRANSPARENT); shape.setStroke(dp(1), Color.parseColor(dark ? "#2B3A31" : "#E5EDE1")); setBackground(shape);
             if (number != null) {
                 GradientDrawable chip = new GradientDrawable(); chip.setShape(GradientDrawable.OVAL);
-                chip.setColor(active ? accent : Color.TRANSPARENT); number.setBackground(active ? chip : null);
+                boolean today = date.equals(LocalDate.now());
+                int todayBackground = getContext().getColor(dark ? R.color.calendar_today_background_dark : R.color.calendar_today_background);
+                chip.setColor(active ? accent : todayBackground); number.setBackground(active || today ? chip : null);
                 number.setTextColor(active ? (dark ? Color.parseColor("#121C18") : Color.WHITE) : date.equals(LocalDate.now()) ? accent : ink);
             }
         }
