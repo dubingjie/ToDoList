@@ -75,7 +75,7 @@ public class IntegrationTestRunner extends Instrumentation {
             grid.draw(new android.graphics.Canvas(preview)); writeImage(preview, "month-grid-preview.png"); preview.recycle();
             grid.select(month.atDay(20)); check(grid.getChildAt(19).isSelected() && !grid.getChildAt(18).isSelected(), "Selection must move to clicked day");
         });
-        android.graphics.Bitmap exported = MonthImage.create(month, sample);
+        android.graphics.Bitmap exported = MonthImage.create(getTargetContext(), month, sample);
         check(exported.getWidth() == 2100 && exported.getHeight() > 2500, "Export must be a high-resolution full month");
         writeImage(exported, "month-export-preview.png"); exported.recycle();
     }

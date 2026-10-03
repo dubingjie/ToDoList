@@ -21,8 +21,8 @@ public final class MonthGrid extends ViewGroup {
     private final int ink, accent, border;
     public MonthGrid(Context c, YearMonth month, LocalDate selected, List<Task> tasks, boolean dark, Listener listener) {
         super(c); this.selected = selected; this.dark = dark; this.listener = listener;
-        ink = Color.parseColor(dark ? "#E7EEE6" : "#20392D");
-        accent = Color.parseColor(dark ? "#A4D7AD" : "#236751");
+        ink = Color.parseColor(dark ? "#E8EFE8" : "#283C31");
+        accent = Color.parseColor(dark ? "#A4D7AD" : "#397557");
         border = Color.parseColor(dark ? "#405448" : "#D5DED7");
         setBackgroundColor(Color.parseColor(dark ? "#1D2B24" : "#FFFFFF"));
         offset = month.atDay(1).getDayOfWeek().getValue() - 1;
@@ -71,7 +71,7 @@ public final class MonthGrid extends ViewGroup {
         }
         TextView label(String value, int size) {
             TextView v = new TextView(getContext()); v.setText(value); v.setTextSize(size); v.setTextColor(ink);
-            v.setIncludeFontPadding(false); return v;
+            UiStyle.typography(v, false); return v;
         }
         void prepare(int height) {
             if (height == preparedHeight) return;
@@ -79,7 +79,7 @@ public final class MonthGrid extends ViewGroup {
             float scale = getResources().getConfiguration().fontScale;
             int head = dp(24 * scale), item = dp(34 * scale), more = dp(20 * scale);
             number = label(date.equals(LocalDate.now()) ? "今" : String.valueOf(date.getDayOfMonth()), 13);
-            number.setGravity(Gravity.CENTER); number.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            number.setGravity(Gravity.CENTER); UiStyle.typography(number, true);
             LinearLayout.LayoutParams numberLayout = new LinearLayout.LayoutParams(head, head); numberLayout.gravity = Gravity.CENTER_HORIZONTAL;
             addView(number, numberLayout);
             int available = Math.max(0, height - dp(6) - head);
@@ -90,7 +90,7 @@ public final class MonthGrid extends ViewGroup {
                 TextView title = label(task.title, 10); title.setMaxLines(2); title.setEllipsize(TextUtils.TruncateAt.END);
                 title.setGravity(Gravity.CENTER_VERTICAL); title.setPadding(dp(2), 0, dp(2), 0);
                 GradientDrawable tint = new GradientDrawable();
-                tint.setColor(Color.parseColor(dark ? "#334B3D" : ("工作".equals(task.tag) ? "#E4EDF7" : "#E8F0E7"))); tint.setCornerRadius(dp(3));
+                tint.setColor(Color.parseColor(dark ? "#334B3D" : ("工作".equals(task.tag) ? "#EEF2F6" : "#EDF4EB"))); tint.setCornerRadius(dp(3));
                 title.setBackground(tint); title.setContentDescription(task.title);
                 title.setOnClickListener(v -> choose(date, true));
                 LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, item - dp(3)); p.bottomMargin = dp(3); addView(title, p);
