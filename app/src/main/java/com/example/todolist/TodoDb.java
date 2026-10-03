@@ -5,7 +5,7 @@ import androidx.room.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-@Database(entities = {Task.class}, version = 3, exportSchema = true)
+@Database(entities = {Task.class}, version = 4, exportSchema = true)
 public abstract class TodoDb extends RoomDatabase {
     public abstract TaskDao tasks();
     private static volatile TodoDb instance;
@@ -20,9 +20,17 @@ public abstract class TodoDb extends RoomDatabase {
             db.execSQL("ALTER TABLE tasks ADD COLUMN startAt INTEGER");
         }
     };
+    public static final androidx.room.migration.Migration MIGRATION_3_4 = new androidx.room.migration.Migration(3, 4) {
+        @Override public void migrate(androidx.sqlite.db.SupportSQLiteDatabase db) {
+            db.execSQL("ALTER TABLE tasks ADD COLUMN taskDate INTEGER");
+            // Existing unfinished rows belong to the day this upgrade occurs;
+            // they should not silently roll over into future days.
+            db.execSQL("UPDATE tasks SET taskDate = CAST(strftime('%s','now','start of day') AS INTEGER) * 1000 WHERE completedAt IS NULL");
+        }
+    };
     public static TodoDb get(Context context) {
         if (instance == null) synchronized (TodoDb.class) {
-            if (instance == null) instance = Room.databaseBuilder(context.getApplicationContext(), TodoDb.class, "todo.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3).build();
+            if (instance == null) instance = Room.databaseBuilder(context.getApplicationContext(), TodoDb.class, "todo.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build();
         }
         return instance;
     }

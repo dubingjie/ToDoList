@@ -38,4 +38,32 @@ public class TaskDatesTest {
         assertTrue(TaskDates.visibleInTodayList(todayTask, today));
         assertEquals(1, TaskDates.count(Collections.singletonList(yesterday), today.minusDays(1), today));
     }
+    @Test public void oldUnfinishedTaskRemainsInHistoryAndDoesNotRollOver() {
+        LocalDate yesterday = LocalDate.now().minusDays(1);
+        Task task = new Task();
+        task.createdAt = yesterday.atTime(16, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+        assertTrue(TaskDates.visibleInDateList(task, yesterday));
+        assertFalse(TaskDates.visibleInTodayList(task, yesterday.plusDays(1)));
+        task.deletedAt = System.currentTimeMillis();
+        assertFalse(TaskDates.visibleInDateList(task, yesterday));
+    }
+    @Test public void midnightRefreshUsesNextLocalCalendarDay() {
+        java.util.TimeZone previous = java.util.TimeZone.getDefault();
+        try {
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("America/New_York"));
+            ZoneId zone = ZoneId.systemDefault();
+            // The spring clock change makes this calendar day 23 hours long.
+            long now = LocalDate.of(2026, 3, 8).atStartOfDay(zone).toInstant().toEpochMilli();
+            long expected = LocalDate.of(2026, 3, 9).atStartOfDay(zone).toInstant().toEpochMilli();
+            assertEquals(expected, TaskDates.nextDayStart(now));
+            assertEquals(23 * 60 * 60 * 1000L, expected - now);
+        } finally { java.util.TimeZone.setDefault(previous); }
+    }
+    @Test public void unfinishedTaskIsLimitedToItsAssignedDay() {
+        LocalDate today = LocalDate.now();
+        Task task = new Task();
+        task.taskDate = today.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();
+        assertTrue(TaskDates.visibleInDateList(task, today));
+        assertFalse(TaskDates.visibleInDateList(task, today.plusDays(1)));
+    }
 }

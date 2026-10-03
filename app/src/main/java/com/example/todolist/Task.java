@@ -12,12 +12,14 @@ public class Task {
     public long createdAt = System.currentTimeMillis();
     public Long dueAt;
     public Long startAt;
+    /** Calendar day this pending item belongs to; null keeps legacy items visible today. */
+    public Long taskDate;
     public Long completedAt;
     public Long deletedAt;
     public Task copy() {
         Task t = new Task();
         t.id = id; t.title = title; t.tag = tag; t.priority = priority;
-        t.createdAt = createdAt; t.dueAt = dueAt; t.startAt = startAt; t.completedAt = completedAt; t.deletedAt = deletedAt;
+        t.createdAt = createdAt; t.dueAt = dueAt; t.startAt = startAt; t.taskDate = taskDate; t.completedAt = completedAt; t.deletedAt = deletedAt;
         return t;
     }
 }

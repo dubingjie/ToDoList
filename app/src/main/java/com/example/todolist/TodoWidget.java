@@ -46,6 +46,7 @@ public class TodoWidget extends AppWidgetProvider {
         List<Integer> ids = new ArrayList<>();
         for (Class<?> provider : PROVIDERS) for (int id : m.getAppWidgetIds(new ComponentName(c, provider))) ids.add(id);
         if (ids.isEmpty()) return;
+        DayRefreshReceiver.schedule(c);
         // DAO order already places unfinished items first; completed items remain visible at the bottom.
         List<Task> all = TodoDb.get(c).tasks().all();
         List<Task> visible = new ArrayList<>();

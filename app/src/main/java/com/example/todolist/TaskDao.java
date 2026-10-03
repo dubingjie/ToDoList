@@ -12,5 +12,6 @@ public interface TaskDao {
     @Query("SELECT * FROM tasks WHERE id = :id") Task find(long id);
     @Insert(onConflict = OnConflictStrategy.REPLACE) long save(Task task);
     @Delete void delete(Task task);
+    @Query("DELETE FROM tasks WHERE deletedAt IS NOT NULL") void emptyTrash();
     @Insert void insertAll(List<Task> tasks);
 }

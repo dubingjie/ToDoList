@@ -39,6 +39,13 @@ public class MainActivity extends Activity {
     private BroadcastReceiver taskChangedReceiver;
     private int savedScrollY;
     private ScrollView activeScroll;
+    private LocalDate displayedToday = LocalDate.now();
+    private boolean resumed;
+    private final Runnable dayRefresh = () -> {
+        if (!resumed) return;
+        refreshDay();
+        scheduleDayRefresh();
+    };
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
     @Override public void onCreate(Bundle state) {
@@ -50,11 +57,37 @@ public class MainActivity extends Activity {
         if (state != null) { page = state.getString("page", "清单"); filter = state.getString("filter", "全部"); month = YearMonth.parse(state.getString("month")); selected = LocalDate.parse(state.getString("selected")); }
         Reminders.channel(this);
         colors(); render();
-        taskChangedReceiver = new BroadcastReceiver() { @Override public void onReceive(Context context, Intent intent) { reload(); } };
+        taskChangedReceiver = new BroadcastReceiver() { @Override public void onReceive(Context context, Intent intent) {
+            if (!refreshDay()) reload();
+            if (resumed) scheduleDayRefresh();
+        } };
         IntentFilter taskFilter = new IntentFilter("com.example.todolist.TASKS_CHANGED");
+        taskFilter.addAction(Intent.ACTION_DATE_CHANGED);
+        taskFilter.addAction(Intent.ACTION_TIME_CHANGED);
+        taskFilter.addAction(Intent.ACTION_TIMEZONE_CHANGED);
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(taskChangedReceiver, taskFilter, Context.RECEIVER_NOT_EXPORTED); else registerReceiver(taskChangedReceiver, taskFilter);
     }
-    @Override protected void onResume() { super.onResume(); reload(); }
+    @Override protected void onResume() {
+        super.onResume(); resumed = true;
+        if (!refreshDay()) reload();
+        scheduleDayRefresh();
+        TodoDb.IO.execute(() -> TodoWidget.updateAll(this));
+    }
+    @Override protected void onPause() { resumed = false; main.removeCallbacks(dayRefresh); super.onPause(); }
+    private boolean refreshDay() {
+        LocalDate today = LocalDate.now();
+        if (today.equals(displayedToday)) return false;
+        if (selected.equals(displayedToday)) { selected = today; month = YearMonth.from(today); savedScrollY = 0; }
+        displayedToday = today;
+        reload();
+        TodoDb.IO.execute(() -> TodoWidget.updateAll(this));
+        return true;
+    }
+    private void scheduleDayRefresh() {
+        main.removeCallbacks(dayRefresh);
+        long now = System.currentTimeMillis();
+        main.postDelayed(dayRefresh, Math.max(1, TaskDates.nextDayStart(now) - now + 100));
+    }
     @Override protected void onSaveInstanceState(Bundle b) { super.onSaveInstanceState(b); b.putString("page", page); b.putString("filter", filter); b.putString("month", month.toString()); b.putString("selected", selected.toString()); b.putString("exportMonth", pendingExportMonth.toString()); b.putBoolean("homeCalendarExpanded", homeCalendarExpanded); }
     @Override protected void onDestroy() { main.removeCallbacksAndMessages(null); if (taskChangedReceiver != null) unregisterReceiver(taskChangedReceiver); super.onDestroy(); }
     private void colors() {
@@ -251,12 +284,11 @@ public class MainActivity extends Activity {
         List<Task> completed = MonthGrid.tasksOn(tasks, selected); int completedCount = 0;
         for (Task t : completed) { addTask(body, t); completedCount++; }
         if (completedCount == 0) { TextView empty = text("当天暂无完成记录", 13, muted, false); empty.setGravity(Gravity.CENTER); body.addView(empty, new LinearLayout.LayoutParams(-1, dp(54))); }
-        if (selected.equals(LocalDate.now())) {
-            TextView pendingHeader = text("待办", 16, ink, true); pendingHeader.setPadding(dp(8), dp(12), dp(8), dp(6)); body.addView(pendingHeader);
-            int pending = 0;
-            for (Task t : tasks) if (t.deletedAt == null && t.completedAt == null) { addTask(body, t); pending++; }
-            if (pending == 0) { TextView empty = text("暂无待办", 13, muted, false); empty.setGravity(Gravity.CENTER); body.addView(empty, new LinearLayout.LayoutParams(-1, dp(54))); }
-        }
+        boolean historical = selected.isBefore(LocalDate.now());
+        TextView pendingHeader = text(historical ? "未完成" : "待办", 16, ink, true); pendingHeader.setPadding(dp(8), dp(12), dp(8), dp(6)); body.addView(pendingHeader);
+        int pending = 0;
+        for (Task t : tasks) if (TaskDates.visibleInDateList(t, selected) && t.completedAt == null) { addTask(body, t); pending++; }
+        if (pending == 0) { TextView empty = text(historical ? "没有未完成事项" : "暂无待办", 13, muted, false); empty.setGravity(Gravity.CENTER); body.addView(empty, new LinearLayout.LayoutParams(-1, dp(54))); }
     }
     private LinearLayout listControls() {
         LinearLayout controls = column(); controls.setPadding(dp(16), dp(4), dp(16), dp(6));
@@ -368,8 +400,12 @@ public class MainActivity extends Activity {
     }
     private void editor(Task original) {
         Task draft = original == null ? new Task() : original.copy();
+        if (original == null) draft.taskDate = selected.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();
         if (original == null) draft.tag = getPreferences(MODE_PRIVATE).getString("defaultTag", "学习");
         LinearLayout form = column(); form.setPadding(dp(24), dp(8), dp(24), dp(8));
+        LocalDate taskDay = TaskDates.date(draft.taskDate == null ? draft.createdAt : draft.taskDate);
+        form.addView(text(taskDay.format(DateTimeFormatter.ofPattern("M月d日 · EEEE", Locale.CHINA)), 12, muted, false));
+        space(form, 8);
         EditText title = new EditText(this); title.setHint("想完成什么？"); title.setText(draft.title); title.setTextSize(18); title.setMaxLines(4); title.setFilters(new InputFilter[]{new InputFilter.LengthFilter(200)}); form.addView(title);
         space(form, 16); form.addView(text("优先级", 13, muted, true));
         Spinner priority = new Spinner(this); ArrayAdapter<String> choices = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, new String[]{"● 低 · 不着急", "● 中 · 按计划", "● 高 · 优先处理"}); priority.setAdapter(choices); priority.setSelection(draft.priority); form.addView(priority, new LinearLayout.LayoutParams(-1, dp(52)));
@@ -545,7 +581,7 @@ public class MainActivity extends Activity {
         });
         settingRow("回收站", trashed.size() + " 项", () -> { page = "回收站"; render(); });
         settingRow("导出月历图片", "PNG", this::chooseExportMonth);
-        space(body, 18); body.addView(text("一件一件  2.6", 12, muted, false));
+        space(body, 18); body.addView(text("一件一件  3.0", 12, muted, false));
     }
     private void settingDivider() {
         View line = new View(this); line.setBackgroundColor(border); body.addView(line, new LinearLayout.LayoutParams(-1, dp(1)));
@@ -572,7 +608,7 @@ public class MainActivity extends Activity {
         space(body, 18); body.addView(text("数据管理", 13, muted, true)); space(body, 4);
         settingRow("回收站", trashed.size() + " 项", () -> { page = "回收站"; render(); });
         settingRow("导出月视图", "PNG", this::chooseExportMonth);
-        space(body, 18); TextView version = text("一件一件 · 2.6", 12, muted, false); version.setGravity(Gravity.CENTER); body.addView(version);
+        space(body, 18); TextView version = text("一件一件 · 3.0", 12, muted, false); version.setGravity(Gravity.CENTER); body.addView(version);
     }
     private void chooseDefaultTag() {
         String[] choices = new String[]{"学习", "工作", "生活"};
@@ -583,24 +619,51 @@ public class MainActivity extends Activity {
         }).show();
     }
     private void trashPage() {
-        body.addView(homeAction("‹ 返回设置", () -> { page = "设置"; render(); })); space(body, 12);
-        body.addView(text("回收站", 20, ink, true)); space(body, 6);
-        body.addView(text("删除的事项会保留在这里，直到你彻底删除。", 12, muted, false)); space(body, 14);
-        if (trashed.isEmpty()) { body.addView(text("回收站为空", 14, muted, false)); return; }
+        LinearLayout trashHeader = row();
+        ImageButton back = new ImageButton(this);
+        back.setImageResource(R.drawable.ic_back);
+        back.setImageTintList(ColorStateList.valueOf(ink));
+        back.setScaleType(ImageView.ScaleType.CENTER); back.setPadding(0, 0, 0, 0);
+        back.setBackground(new android.graphics.drawable.RippleDrawable(ColorStateList.valueOf(soft), null, box(Color.WHITE, 24)));
+        back.setContentDescription("返回设置");
+        back.setOnClickListener(v -> { page = "设置"; render(); });
+        trashHeader.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        trashHeader.addView(text("回收站", 20, ink, true), new LinearLayout.LayoutParams(0, dp(48), 1));
+        boolean canClear = !trashed.isEmpty();
+        TextView clear = text("清空", 14, canClear ? accent : muted, false);
+        clear.setGravity(Gravity.CENTER); clear.setContentDescription("清空回收站");
+        GradientDrawable clearBorder = box(Color.TRANSPARENT, 10);
+        clearBorder.setStroke(dp(1), canClear ? accent : muted);
+        android.graphics.drawable.InsetDrawable clearOutline = new android.graphics.drawable.InsetDrawable(clearBorder, 0, dp(6), 0, dp(6));
+        clear.setBackground(new android.graphics.drawable.RippleDrawable(ColorStateList.valueOf(soft), clearOutline, clearOutline));
+        clear.setOnClickListener(v -> emptyTrash());
+        clear.setEnabled(canClear); clear.setAlpha(canClear ? 1f : .45f);
+        trashHeader.addView(clear, new LinearLayout.LayoutParams(dp(56), dp(48)));
+        body.addView(trashHeader); space(body, 12);
+        if (trashed.isEmpty()) {
+            space(body, 56);
+            TextView emptyTitle = text("回收站为空", 17, ink, true); emptyTitle.setGravity(Gravity.CENTER); body.addView(emptyTitle);
+            space(body, 8);
+            TextView hint = text("删除的事项会暂存于此", 13, muted, false); hint.setGravity(Gravity.CENTER); body.addView(hint);
+            return;
+        }
+        body.addView(text(trashed.size() + " 项 · 可恢复或彻底删除", 12, muted, false)); space(body, 12);
         for (Task t : trashed) {
-            LinearLayout item = column(); item.setPadding(0, dp(8), 0, dp(8));
-            item.addView(text(t.title, 16, ink, false));
-            item.addView(text("删除于 " + dateTime(t.deletedAt), 11, muted, false));
+            LinearLayout item = column(); item.setPadding(dp(16), dp(14), dp(16), dp(8)); item.setBackground(box(surface, 16));
+            TextView title = text(t.title, 16, ink, false); title.setMaxLines(3); title.setEllipsize(TextUtils.TruncateAt.END); item.addView(title);
+            space(item, 6); item.addView(text("删除于 " + dateTime(t.deletedAt), 11, muted, false)); space(item, 6);
             LinearLayout actions = row();
-            actions.addView(homeAction("恢复", () -> restoreTask(t)));
-            TextView remove = text("彻底删除", 13, muted, false); remove.setPadding(dp(20), 0, dp(8), 0);
+            actions.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
+            TextView restore = text("恢复", 13, accent, true); restore.setGravity(Gravity.CENTER); restore.setOnClickListener(v -> restoreTask(t));
+            actions.addView(restore, new LinearLayout.LayoutParams(dp(64), dp(48)));
+            TextView remove = text("彻底删除", 13, muted, false); remove.setGravity(Gravity.CENTER);
             remove.setOnClickListener(v -> new AlertDialog.Builder(this).setTitle("彻底删除这条事项？")
                 .setMessage(t.title + "\n删除后无法恢复。").setNegativeButton("取消", null)
                 .setPositiveButton("彻底删除", (d, w) -> {
                     TodoDb.IO.execute(() -> { Task current = TodoDb.get(this).tasks().find(t.id); if (current != null && current.deletedAt != null) TodoDb.get(this).tasks().delete(current); main.post(this::reload); });
                 }).show());
-            actions.addView(remove, new LinearLayout.LayoutParams(-2, dp(48))); item.addView(actions);
-            body.addView(item); settingDivider();
+            actions.addView(remove, new LinearLayout.LayoutParams(dp(80), dp(48))); item.addView(actions);
+            body.addView(item); space(body, 10);
         }
     }
     private void restoreTask(Task t) {
@@ -612,6 +675,13 @@ public class MainActivity extends Activity {
             }
             main.post(() -> { toast("已恢复事项"); reload(); });
         });
+    }
+    private void emptyTrash() {
+        new AlertDialog.Builder(this).setTitle("清空回收站？").setMessage("清空后所有删除事项将无法恢复。")
+            .setNegativeButton("取消", null).setPositiveButton("清空", (d, w) -> TodoDb.IO.execute(() -> {
+                TodoDb.get(this).tasks().emptyTrash();
+                main.post(this::reload);
+            })).show();
     }
     private void chooseExportMonth() {
         LinearLayout pickers = row(); pickers.setPadding(dp(24), 0, dp(24), 0);
