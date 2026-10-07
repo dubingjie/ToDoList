@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="widget_row_height">28sp</dimen>
+    <dimen name="widget_header_height">24sp</dimen>
+    <dimen name="widget_footer_height">18sp</dimen>
+    <dimen name="widget_padding">10dp</dimen>
+</resources>

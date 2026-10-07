@@ -7,7 +7,6 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Build;
 import android.graphics.Paint;
-import android.util.SizeF;
 import android.widget.RemoteViews;
 import java.util.*;
 
@@ -21,7 +20,11 @@ public class TodoWidget extends AppWidgetProvider {
         TodoDb.IO.execute(() -> { try { updateAll(c); } finally { result.finish(); } });
     }
     @Override public void onReceive(Context c, Intent i) {
-        if ("COMPLETE".equals(i.getAction())) {
+        if ("WIDGET_ITEM".equals(i.getAction()) && i.getBooleanExtra("open", false)) {
+            c.startActivity(new Intent(c, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            return;
+        }
+        if ("COMPLETE".equals(i.getAction()) || "WIDGET_ITEM".equals(i.getAction())) {
             PendingResult result = goAsync();
             TodoDb.IO.execute(() -> {
                 try {
@@ -48,7 +51,13 @@ public class TodoWidget extends AppWidgetProvider {
         if (ids.isEmpty()) return;
         DayRefreshReceiver.schedule(c);
         // DAO order already places unfinished items first; completed items remain visible at the bottom.
-        List<Task> all = TodoDb.get(c).tasks().all();
+        List<Task> visible = visibleTasks(TodoDb.get(c).tasks().all());
+        for (int id : ids) {
+            m.updateAppWidget(id, layout(c, visible, id));
+            if (Build.VERSION.SDK_INT < 31) m.notifyAppWidgetViewDataChanged(id, R.id.widget_rows);
+        }
+    }
+    static List<Task> visibleTasks(List<Task> all) {
         List<Task> visible = new ArrayList<>();
         java.time.LocalDate today = java.time.LocalDate.now();
         for (Task task : all) if (TaskDates.visibleInTodayList(task, today)) visible.add(task);
@@ -57,45 +66,38 @@ public class TodoWidget extends AppWidgetProvider {
             .thenComparing((Task task) -> task.priority, Comparator.reverseOrder())
             .thenComparingLong(task -> task.createdAt)
             .thenComparingLong(task -> task.id));
-        for (int id : ids) {
-            Bundle options = m.getAppWidgetOptions(id);
-            if (Build.VERSION.SDK_INT >= 31) {
-                ArrayList<SizeF> sizes = options.getParcelableArrayList(AppWidgetManager.OPTION_APPWIDGET_SIZES);
-                if (sizes != null && !sizes.isEmpty()) {
-                    Map<SizeF, RemoteViews> layouts = new LinkedHashMap<>();
-                    for (SizeF size : sizes) {
-                        if (size.getWidth() > 0 && size.getHeight() > 0) layouts.put(size, layout(c, visible, size.getHeight()));
-                        if (layouts.size() == 16) break;
-                    }
-                    if (!layouts.isEmpty()) { m.updateAppWidget(id, new RemoteViews(layouts)); continue; }
-                }
-            }
-            int minHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 160);
-            int maxHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, minHeight);
-            m.updateAppWidget(id, new RemoteViews(layout(c, visible, minHeight), layout(c, visible, maxHeight)));
-        }
+        return visible;
     }
+    // Compatibility entry point for previews: height no longer limits the dataset.
     static RemoteViews layout(Context c, List<Task> visible, float height) {
+        return layout(c, visible, AppWidgetManager.INVALID_APPWIDGET_ID);
+    }
+    private static RemoteViews layout(Context c, List<Task> visible, int widgetId) {
             PendingIntent open = PendingIntent.getActivity(c, 0, new Intent(c, MainActivity.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
             RemoteViews v = new RemoteViews(c.getPackageName(), R.layout.widget);
             v.setOnClickPendingIntent(R.id.widget_title, open);
             v.setOnClickPendingIntent(R.id.widget_footer, open);
-            v.removeAllViews(R.id.widget_rows);
-            // Match the XML's sp dimensions, including Android's large-font conversion.
-            android.util.DisplayMetrics metrics = c.getResources().getDisplayMetrics();
-            float rowHeight = android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, 32, metrics) / metrics.density;
-            float header = android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, 24, metrics) / metrics.density;
-            float footer = android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, 18, metrics) / metrics.density;
-            int limit = Math.max(0, (int) ((height - 20 - header - footer) / rowHeight));
-            int shown = Math.min(limit, visible.size());
-            int completedShown = 0;
-            for (int x = 0; x < shown; x++) {
-                Task t = visible.get(x);
+            Intent template = new Intent(c, TodoWidget.class).setAction("WIDGET_ITEM").setData(Uri.parse("todo://widget/" + widgetId));
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= 31 ? PendingIntent.FLAG_MUTABLE : 0);
+            v.setPendingIntentTemplate(R.id.widget_rows, PendingIntent.getBroadcast(c, widgetId, template, flags));
+            if (Build.VERSION.SDK_INT >= 31) {
+                RemoteViews.RemoteCollectionItems.Builder items = new RemoteViews.RemoteCollectionItems.Builder().setHasStableIds(true).setViewTypeCount(1);
+                for (Task task : visible) items.addItem(task.id, item(c, task));
+                v.setRemoteAdapter(R.id.widget_rows, items.build());
+            } else {
+                Intent service = new Intent(c, WidgetListService.class).setData(Uri.parse("todo://widget-list/" + widgetId));
+                v.setRemoteAdapter(R.id.widget_rows, service);
+            }
+            int unfinished = 0;
+            for (Task task : visible) if (task.completedAt == null) unfinished++;
+            v.setTextViewText(R.id.widget_footer, visible.isEmpty() ? "今天很轻松，享受吧！" : "共 " + visible.size() + " 件 · 已完成 " + (visible.size() - unfinished));
+            return v;
+    }
+    static RemoteViews item(Context c, Task t) {
                 RemoteViews row = new RemoteViews(c.getPackageName(), R.layout.widget_row);
                 row.setTextViewText(R.id.widget_text, t.title);
                 boolean completed = t.completedAt != null;
                 if (completed) {
-                    completedShown++;
                     row.setTextViewText(R.id.widget_check, "✓");
                     row.setTextColor(R.id.widget_check, 0xFF60736B);
                     row.setInt(R.id.widget_check, "setBackgroundResource", R.drawable.widget_check_completed);
@@ -109,14 +111,8 @@ public class TodoWidget extends AppWidgetProvider {
                     row.setInt(R.id.widget_check, "setBackgroundResource", checkBackground);
                     row.setContentDescription(R.id.widget_check, "完成：" + t.title);
                 }
-                row.setOnClickPendingIntent(R.id.widget_text, open);
-                Intent click = new Intent(c, TodoWidget.class).setAction("COMPLETE").setData(Uri.parse("todo://complete/" + t.id)).putExtra("id", t.id);
-                row.setOnClickPendingIntent(R.id.widget_check, PendingIntent.getBroadcast(c, 0, click, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
-                v.addView(R.id.widget_rows, row);
-            }
-            int unfinished = 0;
-            for (Task task : visible) if (task.completedAt == null) unfinished++;
-            v.setTextViewText(R.id.widget_footer, visible.isEmpty() ? "今天很轻松，享受吧！" : "显示 " + shown + "/" + visible.size() + " 件 · 已完成 " + (visible.size() - unfinished));
-            return v;
+                row.setOnClickFillInIntent(R.id.widget_text, new Intent().putExtra("open", true));
+                row.setOnClickFillInIntent(R.id.widget_check, new Intent().putExtra("id", t.id));
+                return row;
     }
 }

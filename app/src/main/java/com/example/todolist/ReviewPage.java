@@ -49,7 +49,7 @@ final class ReviewPage extends LinearLayout {
     }
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
     private TextView text(String value, int size, int color, boolean bold) {
-        TextView view = new TextView(getContext()); view.setText(value); view.setTextSize(size); view.setTextColor(color);
+        TextView view = new TextView(getContext()); view.setText(value); view.setTextSize(Math.max(12, size)); view.setTextColor(color);
         view.setGravity(Gravity.CENTER_VERTICAL); UiStyle.typography(view, bold); return view;
     }
     private GradientDrawable background(int color, int radius) {
@@ -100,6 +100,13 @@ final class ReviewPage extends LinearLayout {
                 TextView edit = text("编辑", 14, accent, true); edit.setGravity(Gravity.CENTER);
                 edit.setOnClickListener(v -> { persist(); reading = false; load(); }); header.addView(edit, new LayoutParams(dp(56), dp(48)));
             }
+            ImageButton more = new ImageButton(getContext()); more.setImageDrawable(UiStyle.icon(getContext(), "more", muted, 22));
+            more.setBackground(UiStyle.press(getContext(), android.graphics.Color.TRANSPARENT, 14, accent));
+            more.setContentDescription("复盘更多操作");
+            more.setOnClickListener(v -> {
+                if (record == null) return;
+                new AlertDialog.Builder(getContext()).setItems(new String[]{"删除这篇复盘"}, (dialog, which) -> confirmDelete()).show();
+            }); header.addView(more, new LayoutParams(dp(48), dp(48)));
             addView(header);
             TextView date = text(dateTitle(start) + (reading ? "" : "  ▾"), 12, muted, false); date.setPadding(dp(8), 0, dp(8), 0);
             if (!reading) {
@@ -134,6 +141,21 @@ final class ReviewPage extends LinearLayout {
         });
     }
     private JSONArray parse(String json) { try { return new JSONArray(json == null ? "[]" : json); } catch (JSONException e) { return new JSONArray(); } }
+    private void confirmDelete() {
+        if (record == null) return;
+        String key = record.id;
+        new AlertDialog.Builder(getContext()).setTitle("删除这篇复盘？")
+            .setMessage("复盘内容删除后无法恢复，任务记录和周、月目标会保留。")
+            .setNegativeButton("取消", null).setPositiveButton("删除", (dialog, which) -> {
+                if (record == null || !record.id.equals(key)) return;
+                persist(); int token = ++generation; record = null; dirty = false; answers.clear();
+                removeAllViews(); addView(text("正在删除…", 13, muted, false));
+                TodoDb.IO.execute(() -> {
+                    TodoDb.get(getContext()).reviews().clearContent(key);
+                    handler.post(() -> { if (generation == token) showList(); });
+                });
+            }).show();
+    }
     private void buildList(List<ReviewRecord> history) {
         if (type != 0) {
             LinearLayout targets = card(); LinearLayout header = row();

@@ -6,6 +6,23 @@ import java.util.*;
 import static org.junit.Assert.*;
 
 public class TaskDatesTest {
+    @Test public void weeklyRateUsesAssignedDatesForBothCounts() {
+        LocalDate start = LocalDate.of(2026, 10, 5), end = start.plusWeeks(1);
+        Task assigned = completed(end.plusDays(1));
+        assigned.createdAt = start.minusWeeks(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();
+        assigned.taskDate = start.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();
+        Task pending = new Task(); pending.taskDate = assigned.taskDate;
+        Task otherWeek = completed(start); otherWeek.taskDate = assigned.createdAt;
+        Task deleted = assigned.copy(); deleted.deletedAt = 1L;
+        Task legacy = new Task(); legacy.createdAt = start.plusDays(6).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();
+        Task exclusiveEnd = new Task(); exclusiveEnd.taskDate = end.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();
+        List<Task> tasks = Arrays.asList(assigned, pending, otherWeek, deleted, legacy, exclusiveEnd);
+        assertEquals(3, TaskDates.countAssigned(tasks, start, end, false));
+        assertEquals(1, TaskDates.countAssigned(tasks, start, end, true));
+        assigned.completedAt = null;
+        assertEquals(0, TaskDates.countAssigned(tasks, start, end, true));
+        assertEquals(0, TaskDates.countAssigned(Collections.emptyList(), start, end, false));
+    }
     private Task completed(LocalDate date) {
         Task t = new Task(); t.completedAt = date.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli(); return t;
     }

@@ -180,15 +180,16 @@ public class IntegrationTestRunner extends Instrumentation {
     private Task lookup(String title) { for (Task t : TodoDb.get(getTargetContext()).tasks().all()) if (t.title.equals(title)) return t; return null; }
     private void widgetLayout() {
         runOnMainSync(() -> {
-            android.widget.RemoteViews widget = new android.widget.RemoteViews(getTargetContext().getPackageName(), R.layout.widget);
             android.widget.RemoteViews row = new android.widget.RemoteViews(getTargetContext().getPackageName(), R.layout.widget_row);
-            row.setTextViewText(R.id.widget_text, "小组件检查"); widget.addView(R.id.widget_rows, row);
-            android.view.View view = widget.apply(getTargetContext(), new android.widget.FrameLayout(getTargetContext()));
+            row.setTextViewText(R.id.widget_text, "小组件检查");
+            android.view.View view = row.apply(getTargetContext(), new android.widget.FrameLayout(getTargetContext()));
             check(view.findViewById(R.id.widget_check) != null, "Widget RemoteViews must inflate successfully");
             Task pending = new Task(); pending.id = 100; pending.title = "待完成任务";
             Task finished = new Task(); finished.id = 101; finished.title = "今天已完成"; finished.completedAt = System.currentTimeMillis();
-            android.view.View ordered = TodoWidget.layout(getTargetContext(), java.util.Arrays.asList(pending, finished), 160).apply(getTargetContext(), new android.widget.FrameLayout(getTargetContext()));
-            android.widget.LinearLayout orderedRows = ordered.findViewById(R.id.widget_rows);
+            android.view.View ordered = TodoWidget.layout(getTargetContext(), java.util.Arrays.asList(pending, finished), 160f).apply(getTargetContext(), new android.appwidget.AppWidgetHostView(getTargetContext()));
+            int orderedSize = UiStyle.dp(getTargetContext(), 160);
+            ordered.measure(android.view.View.MeasureSpec.makeMeasureSpec(orderedSize, android.view.View.MeasureSpec.EXACTLY), android.view.View.MeasureSpec.makeMeasureSpec(orderedSize, android.view.View.MeasureSpec.EXACTLY)); ordered.layout(0, 0, orderedSize, orderedSize);
+            android.widget.ListView orderedRows = ordered.findViewById(R.id.widget_rows);
             check(orderedRows.getChildCount() == 2, "Widget must keep completed rows visible");
             check(((android.widget.TextView) orderedRows.getChildAt(0).findViewById(R.id.widget_text)).getText().toString().equals("待完成任务"), "Pending rows must come first");
             check(((android.widget.TextView) orderedRows.getChildAt(1).findViewById(R.id.widget_check)).getText().toString().equals("✓"), "Completed rows must show a check mark");
@@ -203,14 +204,14 @@ public class IntegrationTestRunner extends Instrumentation {
             for (int width : new int[]{150, 330}) {
                 int previousRows = -1;
                 for (int height : new int[]{160, 240, 320}) {
-                    android.view.View compact = TodoWidget.layout(getTargetContext(), items, height).apply(getTargetContext(), new android.widget.FrameLayout(getTargetContext()));
+                    android.view.View compact = TodoWidget.layout(getTargetContext(), items, (float) height).apply(getTargetContext(), new android.appwidget.AppWidgetHostView(getTargetContext()));
                     int w = Math.round(width * density), h = Math.round(height * density);
                     compact.measure(android.view.View.MeasureSpec.makeMeasureSpec(w, android.view.View.MeasureSpec.EXACTLY), android.view.View.MeasureSpec.makeMeasureSpec(h, android.view.View.MeasureSpec.EXACTLY));
                     compact.layout(0, 0, w, h);
-                    android.widget.LinearLayout rows = compact.findViewById(R.id.widget_rows);
+                    android.widget.ListView rows = compact.findViewById(R.id.widget_rows);
                     int count = rows.getChildCount();
                     check(count > previousRows, "Taller widgets must display more tasks");
-                    check(count > 0 && rows.getChildAt(count - 1).getBottom() <= rows.getHeight(), "Rows must fit without footer clipping");
+                    check(count > 0 && rows.getChildAt(count - 1).getBottom() >= rows.getHeight() - getTargetContext().getResources().getDimensionPixelSize(R.dimen.widget_row_height), "Task list must fill available space");
                     previousRows = count;
                     if (height == 240) {
                         android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888);

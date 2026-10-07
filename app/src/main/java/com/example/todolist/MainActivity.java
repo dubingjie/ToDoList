@@ -115,14 +115,14 @@ public class MainActivity extends Activity {
     }
     private void colors() {
         bg = color(dark ? "#141E19" : "#F8FAF7"); surface = color(dark ? "#1E2C24" : "#FFFFFF");
-        ink = color(dark ? "#E8EFE8" : "#283C31"); muted = color(dark ? "#A6B5AB" : "#77857B");
+        ink = color(dark ? "#E8EFE8" : "#283C31"); muted = color(dark ? "#B2BFB6" : "#627369");
         accent = color(dark ? "#A4D7AD" : "#397557"); soft = color(dark ? "#30483A" : "#EAF2E9"); border = color(dark ? "#34463A" : "#E5ECE4");
     }
     private int color(String s) { return Color.parseColor(s); }
     private int dp(float n) { return (int) (n * getResources().getDisplayMetrics().density + .5f); }
     private GradientDrawable box(int fill, int radius) { GradientDrawable d = new GradientDrawable(); d.setColor(fill); d.setCornerRadius(dp(radius)); return d; }
     private TextView text(String s, int size, int color, boolean bold) {
-        TextView v = new TextView(this); v.setText(s); v.setTextSize(size); v.setTextColor(color);
+        TextView v = new TextView(this); v.setText(s); v.setTextSize(Math.max(12, size)); v.setTextColor(color);
         UiStyle.typography(v, bold); v.setGravity(Gravity.CENTER_VERTICAL); return v;
     }
     private LinearLayout column() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL); return l; }
@@ -374,7 +374,7 @@ public class MainActivity extends Activity {
         if (t.dueAt != null) { space(content, 5); content.addView(text((t.completedAt == null && t.dueAt < System.currentTimeMillis() ? "已逾期 · " : "截止 · ") + dateTime(t.dueAt), 11, muted, false)); }
         c.addView(content, new LinearLayout.LayoutParams(0, -2, 1));
         ImageButton edit = new ImageButton(this); edit.setImageDrawable(UiStyle.icon(this, "more", muted, 22)); edit.setBackground(UiStyle.press(this, Color.TRANSPARENT, 22, accent)); edit.setContentDescription("编辑或删除：" + t.title); edit.setOnClickListener(v -> actions(t)); c.addView(edit, new LinearLayout.LayoutParams(dp(44), dp(48)));
-        c.setOnClickListener(v -> toggle(t)); c.setOnLongClickListener(v -> { actions(t); return true; });
+        c.setOnClickListener(v -> editor(t)); c.setOnLongClickListener(v -> { actions(t); return true; });
         c.setOnTouchListener(new View.OnTouchListener() {
             float x, y; boolean moved;
             @Override public boolean onTouch(View v, android.view.MotionEvent e) {
@@ -588,19 +588,13 @@ public class MainActivity extends Activity {
         LocalDate today = LocalDate.now();
         LocalDate weekStart = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
         LocalDate weekEnd = weekStart.plusDays(7);
-        int weekDone = TaskDates.count(tasks, weekStart, weekEnd);
-        Set<Long> weeklyWork = new HashSet<>();
-        for (Task t : tasks) if (t.deletedAt == null) {
-            boolean createdThisWeek = !TaskDates.date(t.createdAt).isBefore(weekStart) && TaskDates.date(t.createdAt).isBefore(weekEnd);
-            boolean completedThisWeek = t.completedAt != null && !TaskDates.date(t.completedAt).isBefore(weekStart) && TaskDates.date(t.completedAt).isBefore(weekEnd);
-            if (createdThisWeek || completedThisWeek) weeklyWork.add(t.id);
-        }
-        int weekTotal = weeklyWork.size();
+        int weekDone = TaskDates.countAssigned(tasks, weekStart, weekEnd, true);
+        int weekTotal = TaskDates.countAssigned(tasks, weekStart, weekEnd, false);
         int rate = weekTotal == 0 ? 0 : Math.min(100, Math.round(weekDone * 100f / weekTotal));
         LinearLayout summary = card();
         summary.addView(text("本周完成率", 13, muted, false)); space(summary, 4);
-        summary.addView(text(rate + "%", 40, accent, true));
-        summary.addView(text(weekDone + " / " + weekTotal + " 件", 14, ink, true));
+        summary.addView(text(weekTotal == 0 ? "暂无数据" : rate + "%", weekTotal == 0 ? 26 : 40, accent, true));
+        summary.addView(text(weekTotal == 0 ? "本周还没有安排事项" : "已完成 " + weekDone + " / " + weekTotal + " 件", 14, ink, true));
         space(summary, 10);
         summary.addView(text("本月完成 " + TaskDates.count(tasks, today.withDayOfMonth(1), today.withDayOfMonth(1).plusMonths(1)) + " 件", 13, muted, false));
         body.addView(summary); space(body, 24);
@@ -624,7 +618,7 @@ public class MainActivity extends Activity {
         LinearLayout chartCard = card(); chartCard.addView(chart); body.addView(chartCard); space(body, 20);
         int totalCompleted = (int) tasks.stream().filter(t -> t.deletedAt == null && t.completedAt != null).count();
         body.addView(text("累计完成 " + totalCompleted + " 件", 13, muted, false));
-        space(body, 8); body.addView(text("完成率按本周新建事项计算；历史完成记录仍保留在月视图中。", 12, muted, false));
+        space(body, 8); body.addView(text("完成率按事项所属日期统计：本周事项中已完成的比例。七天图表与月视图按实际完成日期记录。", 12, muted, false));
     }
     private void settingsPageLegacy() {
         body.addView(text("设置", 20, ink, true)); space(body, 16);

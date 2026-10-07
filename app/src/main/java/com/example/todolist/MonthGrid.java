@@ -77,7 +77,14 @@ public final class MonthGrid extends ViewGroup {
             if (height == preparedHeight) return;
             preparedHeight = height; removeAllViews();
             float scale = getResources().getConfiguration().fontScale;
-            int head = dp(24 * scale), item = dp(34 * scale), more = dp(20 * scale);
+            TextView sample = label("事项", 11);
+            android.graphics.Paint.FontMetrics metrics = sample.getPaint().getFontMetrics();
+            int gap = dp(2);
+            int head = dp(24 * scale);
+            int item = Math.max(dp(18 * scale), (int) Math.ceil(metrics.descent - metrics.ascent) + dp(4)) + gap;
+            TextView moreSample = label("＋2件", 12);
+            android.graphics.Paint.FontMetrics moreMetrics = moreSample.getPaint().getFontMetrics();
+            int more = Math.max(dp(20 * scale), (int) Math.ceil(moreMetrics.descent - moreMetrics.ascent) + dp(4));
             number = label(date.equals(LocalDate.now()) ? "今" : String.valueOf(date.getDayOfMonth()), 13);
             number.setGravity(Gravity.CENTER); UiStyle.typography(number, true);
             LinearLayout.LayoutParams numberLayout = new LinearLayout.LayoutParams(head, head); numberLayout.gravity = Gravity.CENTER_HORIZONTAL;
@@ -87,17 +94,17 @@ public final class MonthGrid extends ViewGroup {
             int shown = Math.min(tasks.size(), Math.max(0, (available - (overflow ? more : 0)) / item));
             for (int i = 0; i < shown; i++) {
                 Task task = tasks.get(i);
-                TextView title = label(task.title, 10); title.setMaxLines(2); title.setEllipsize(TextUtils.TruncateAt.END);
+                TextView title = label(task.title, 11); title.setSingleLine(true); title.setEllipsize(TextUtils.TruncateAt.END); title.setLineSpacing(0, 1f);
                 title.setGravity(Gravity.CENTER_VERTICAL); title.setPadding(dp(2), 0, dp(2), 0);
                 GradientDrawable tint = new GradientDrawable();
                 tint.setColor(Color.parseColor(dark ? "#334B3D" : ("工作".equals(task.tag) ? "#EEF2F6" : "#EDF4EB"))); tint.setCornerRadius(dp(3));
                 title.setBackground(tint); title.setContentDescription(task.title);
                 title.setOnClickListener(v -> choose(date, true));
-                LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, item - dp(3)); p.bottomMargin = dp(3); addView(title, p);
+                LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, item - gap); p.bottomMargin = gap; addView(title, p);
             }
             View spacer = new View(getContext()); addView(spacer, new LinearLayout.LayoutParams(1, 0, 1));
             if (shown < tasks.size()) {
-                TextView plus = label("＋" + (tasks.size() - shown), 12); plus.setGravity(Gravity.CENTER); plus.setTextColor(accent);
+                TextView plus = label("＋" + (tasks.size() - shown) + "件", 12); plus.setGravity(Gravity.CENTER); plus.setTextColor(accent); plus.setMaxLines(1); plus.setEllipsize(TextUtils.TruncateAt.END);
                 plus.setContentDescription(date + "，还有 " + (tasks.size() - shown) + " 件，查看全部");
                 plus.setOnClickListener(v -> choose(date, true)); addView(plus, new LinearLayout.LayoutParams(-1, more));
             }
