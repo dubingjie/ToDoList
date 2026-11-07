@@ -36,7 +36,7 @@ final class TaskAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     }
     private final Context context;
     private final boolean dark;
-    private final int surface, ink, muted, accent, soft;
+    private final int surface, ink, muted, accent, soft, border;
     private final Supplier<View> calendar;
     private final Listener listener;
     private final List<Row> rows = new ArrayList<>();
@@ -45,10 +45,10 @@ final class TaskAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private View calendarView;
     private FrameLayout calendarHolder;
 
-    TaskAdapter(Context context, boolean dark, int surface, int ink, int muted, int accent, int soft,
+    TaskAdapter(Context context, boolean dark, int surface, int ink, int muted, int accent, int soft, int border,
                 Supplier<View> calendar, Listener listener) {
         this.context = context; this.dark = dark;
-        this.surface = surface; this.ink = ink; this.muted = muted; this.accent = accent; this.soft = soft;
+        this.surface = surface; this.ink = ink; this.muted = muted; this.accent = accent; this.soft = soft; this.border = border;
         this.calendar = calendar; this.listener = listener;
     }
 
@@ -181,10 +181,12 @@ final class TaskAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 return new RecyclerView.ViewHolder(view) {};
             }
             case CARDS: {
-                LinearLayout row = new LinearLayout(context); row.setBaselineAligned(false);
+                LinearLayout bento = new LinearLayout(context);
+                bento.setOrientation(LinearLayout.VERTICAL); bento.setBaselineAligned(false);
                 RecyclerView.LayoutParams params = new RecyclerView.LayoutParams(-1, -2);
                 params.setMargins(dp(16), dp(2), dp(16), dp(6));
-                row.setLayoutParams(params);
+                bento.setLayoutParams(params);
+                LinearLayout topRow = new LinearLayout(context); topRow.setBaselineAligned(false);
                 LinearLayout progress = dashCard();
                 progress.addView(dashLabel("今日进度"));
                 TextView progressValue = dashValue("0 / 0"); progressValue.setTag("progressValue");
@@ -197,9 +199,9 @@ final class TaskAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 progress.addView(bar, barParams);
                 TextView progressSub = text("", 11, muted, false); progressSub.setTag("progressSub");
                 progress.addView(progressSub);
-                LinearLayout.LayoutParams leftParams = new LinearLayout.LayoutParams(0, -2, 1);
+                LinearLayout.LayoutParams leftParams = new LinearLayout.LayoutParams(0, -2, 2);
                 leftParams.setMargins(0, 0, dp(5), 0);
-                row.addView(progress, leftParams);
+                topRow.addView(progress, leftParams);
                 LinearLayout streak = dashCard();
                 streak.addView(dashLabel("连续打卡"));
                 TextView streakValue = dashValue("0 天"); streakValue.setTag("streakValue");
@@ -207,15 +209,16 @@ final class TaskAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 LinearLayout dots = new LinearLayout(context); dots.setTag("dots");
                 for (int i = 0; i < 7; i++) {
                     View dot = new View(context);
-                    LinearLayout.LayoutParams dotParams = new LinearLayout.LayoutParams(dp(10), dp(10));
+                    LinearLayout.LayoutParams dotParams = new LinearLayout.LayoutParams(dp(8), dp(8));
                     dotParams.setMargins(dp(2), dp(10), dp(2), 0);
                     dots.addView(dot, dotParams);
                 }
                 streak.addView(dots);
                 LinearLayout.LayoutParams rightParams = new LinearLayout.LayoutParams(0, -2, 1);
                 rightParams.setMargins(dp(5), 0, 0, 0);
-                row.addView(streak, rightParams);
-                return new RecyclerView.ViewHolder(row) {};
+                topRow.addView(streak, rightParams);
+                bento.addView(topRow);
+                return new RecyclerView.ViewHolder(bento) {};
             }
             default: return new RecyclerView.ViewHolder(taskView()) {};
         }
@@ -247,9 +250,7 @@ final class TaskAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         LinearLayout card = new LinearLayout(context);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(14), dp(12), dp(14), dp(12));
-        card.setBackground(UiStyle.press(context, surface, 20, accent));
-        card.setElevation(dp(1));
-        if (Build.VERSION.SDK_INT >= 28) card.setOutlineAmbientShadowColor(Color.parseColor("#593A2E1E"));
+        card.setBackground(UiStyle.pressBordered(context, surface, 20, border, accent));
         card.setOnClickListener(v -> listener.onOpenStats());
         return card;
     }
@@ -257,7 +258,7 @@ final class TaskAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         return text(label, 11, muted, false);
     }
     private TextView dashValue(String value) {
-        TextView view = text(value, 22, ink, true);
+        TextView view = text(value, 26, ink, true);
         view.setPadding(0, dp(2), 0, 0);
         return view;
     }
@@ -271,7 +272,7 @@ final class TaskAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         ((TextView) itemView.findViewWithTag("progressSub")).setText(
             total == 0 ? "今天还没有安排事项" : done == total ? "全部完成，太棒了！" : "已完成 " + Math.round(done * 100f / total) + "%");
         int[] streak = streakInfo(lastTasks);
-        ((TextView) itemView.findViewWithTag("streakValue")).setText(streak[0] + " 天");
+        ((TextView) itemView.findViewWithTag("streakValue")).setText("🔥 " + streak[0] + " 天");
         LinearLayout dots = itemView.findViewWithTag("dots");
         for (int i = 0; i < dots.getChildCount(); i++) {
             boolean filled = (streak[1] & (1 << i)) != 0;
@@ -285,10 +286,14 @@ final class TaskAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private View taskView() {
         LinearLayout card = new LinearLayout(context);
         card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setPadding(dp(6), dp(8), dp(6), dp(8));
-        card.setBackground(UiStyle.press(context, surface, 20, accent));
-        card.setElevation(dp(1));
-        if (Build.VERSION.SDK_INT >= 28) card.setOutlineAmbientShadowColor(Color.parseColor("#593A2E1E"));
+        card.setPadding(dp(10), dp(8), dp(6), dp(8));
+        card.setBackground(UiStyle.pressBordered(context, surface, 20, border, accent));
+        View colorBar = new View(context); colorBar.setTag("bar");
+        android.graphics.drawable.GradientDrawable barBg = new android.graphics.drawable.GradientDrawable();
+        barBg.setCornerRadius(dp(3)); colorBar.setBackground(barBg);
+        LinearLayout.LayoutParams barParams = new LinearLayout.LayoutParams(dp(4), dp(36));
+        barParams.setMargins(0, 0, dp(4), 0);
+        card.addView(colorBar, barParams);
         ImageButton check = new ImageButton(context); check.setTag("check");
         check.setBackground(UiStyle.press(context, Color.TRANSPARENT, 22, accent));
         card.addView(check, new LinearLayout.LayoutParams(dp(44), dp(48)));
@@ -305,6 +310,9 @@ final class TaskAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     }
 
     private void bindTask(View itemView, Task t) {
+        View colorBar = itemView.findViewWithTag("bar");
+        ((android.graphics.drawable.GradientDrawable) colorBar.getBackground().mutate()).setColor(tagColor(t.tag));
+        colorBar.setAlpha(t.completedAt == null ? 1f : .35f);
         ImageButton check = itemView.findViewWithTag("check");
         LinearLayout content = itemView.findViewWithTag("content");
         ImageButton more = itemView.findViewWithTag("more");

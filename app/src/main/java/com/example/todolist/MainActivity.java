@@ -22,6 +22,7 @@ import androidx.recyclerview.widget.*;
 import androidx.coordinatorlayout.widget.CoordinatorLayout;
 import androidx.lifecycle.ViewModelProvider;
 import com.google.android.material.bottomnavigation.BottomNavigationView;
+import com.google.android.material.bottomsheet.BottomSheetDialog;
 import com.google.android.material.navigation.NavigationBarView;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
@@ -184,8 +185,10 @@ public class MainActivity extends AppCompatActivity {
     }
     private void heading(String name, String sub) { body.addView(text(name, 30, ink, true)); space(body, 6); body.addView(text(sub, 13, muted, false)); space(body, 24); }
     private LinearLayout card() {
-        LinearLayout l = column(); l.setPadding(dp(18), dp(18), dp(18), dp(18)); l.setBackground(box(surface, 22));
-        l.setElevation(dp(1.5f));
+        LinearLayout l = column(); l.setPadding(dp(18), dp(18), dp(18), dp(18));
+        GradientDrawable background = box(surface, 22); background.setStroke(dp(1), border);
+        l.setBackground(background);
+        l.setElevation(dp(1));
         if (Build.VERSION.SDK_INT >= 28) l.setOutlineAmbientShadowColor(color("#593A2E1E"));
         return l;
     }
@@ -280,7 +283,7 @@ public class MainActivity extends AppCompatActivity {
             @Override public void onSwipeDelete(Task t) { delete(t); }
             @Override public void onOpenStats() { savedScrollY = 0; page = "统计"; statsTab = 0; fadeIn = true; render(); }
         };
-        homeAdapter = new TaskAdapter(this, dark, surface, ink, muted, accent, soft, this::homeHeaderView, listener);
+        homeAdapter = new TaskAdapter(this, dark, surface, ink, muted, accent, soft, border, this::homeHeaderView, listener);
         RecyclerView list = new RecyclerView(this);
         list.setLayoutManager(new LinearLayoutManager(this));
         list.setClipToPadding(false);
@@ -294,12 +297,21 @@ public class MainActivity extends AppCompatActivity {
         int todayBackground = getColor(dark ? R.color.calendar_today_background_dark : R.color.calendar_today_background);
         int circleSize = Math.max(dp(32), Math.min(dp(44), (getResources().getDisplayMetrics().widthPixels - dp(20)) / 7));
         LinearLayout header = row();
-        header.setPadding(dp(8), dp(4), dp(8), dp(2));
-        TextView menu = text("☷", 28, ink, false); menu.setGravity(Gravity.CENTER); menu.setContentDescription("清单菜单");
-        header.addView(menu, new LinearLayout.LayoutParams(dp(56), dp(52)));
-        TextView title = text(month.format(DateTimeFormatter.ofPattern("yyyy.MM")), 22, ink, true); title.setGravity(Gravity.CENTER);
-        header.addView(title, new LinearLayout.LayoutParams(0, dp(52), 1));
-        TextView widget = text("⌂", 24, ink, false); widget.setGravity(Gravity.CENTER); widget.setContentDescription("添加到桌面");
+        header.setPadding(dp(8), dp(6), dp(8), dp(2));
+        LinearLayout greeting = column();
+        int hour = LocalTime.now().getHour();
+        String hello = hour < 5 ? "夜深了" : hour < 12 ? "早上好" : hour < 14 ? "中午好" : hour < 18 ? "下午好" : "晚上好";
+        greeting.addView(text(hello, 27, ink, true));
+        LocalDate today = LocalDate.now();
+        int pendingToday = 0;
+        for (Task t : tasks) if (TaskDates.visibleInDateList(t, today) && t.completedAt == null) pendingToday++;
+        String subtitle = selected.format(DateTimeFormatter.ofPattern("M月d日 · EEEE", Locale.CHINA));
+        if (selected.equals(today)) subtitle += pendingToday == 0 ? " · 今天没有待办" : " · 还有 " + pendingToday + " 件待办";
+        TextView sub = text(subtitle, 13, muted, false);
+        sub.setPadding(0, dp(4), 0, 0);
+        greeting.addView(sub);
+        header.addView(greeting, new LinearLayout.LayoutParams(0, dp(64), 1));
+        TextView widget = text("⌂", 22, muted, false); widget.setGravity(Gravity.CENTER); widget.setContentDescription("添加到桌面");
         widget.setOnClickListener(v -> pinWidget());
         header.addView(widget, new LinearLayout.LayoutParams(dp(44), dp(52)));
         ImageButton expand = new ImageButton(this);
@@ -312,14 +324,7 @@ public class MainActivity extends AppCompatActivity {
             ColorStateList.valueOf(soft), null, box(Color.WHITE, 26)));
         expand.setContentDescription(homeCalendarExpanded ? "折叠日历" : "展开日历");
         expand.setOnClickListener(v -> { homeCalendarExpanded = !homeCalendarExpanded; render(); });
-        header.addView(expand, new LinearLayout.LayoutParams(dp(56), dp(52)));
-        if (header.getChildCount() >= 3) {
-            header.removeViewAt(0);
-            header.removeViewAt(1);
-            TextView widgetButton = homeAction("添加到桌面", this::pinWidget);
-            widgetButton.setContentDescription("添加到桌面");
-            header.addView(widgetButton, 1, new LinearLayout.LayoutParams(dp(104), dp(44)));
-        }
+        header.addView(expand, new LinearLayout.LayoutParams(dp(48), dp(52)));
         container.addView(header);
 
         LinearLayout weekdays = row();
@@ -483,26 +488,62 @@ public class MainActivity extends AppCompatActivity {
             content.getChildAt(i).setOnClickListener(listener);
         }
     }
+    private LinearLayout chipRow(String[] labels, int selected, java.util.function.IntConsumer onSelect) {
+        LinearLayout chips = row();
+        for (int i = 0; i < labels.length; i++) {
+            final int index = i;
+            TextView chip = text(labels[i], 13, index == selected ? accent : muted, index == selected);
+            chip.setGravity(Gravity.CENTER);
+            styleChip(chip, index == selected);
+            chip.setOnClickListener(v -> {
+                onSelect.accept(index);
+                for (int j = 0; j < chips.getChildCount(); j++) styleChip((TextView) chips.getChildAt(j), j == index);
+            });
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(38), 1);
+            params.setMargins(dp(index == 0 ? 0 : 4), 0, dp(index == labels.length - 1 ? 0 : 4), 0);
+            chips.addView(chip, params);
+        }
+        return chips;
+    }
+    private void styleChip(TextView chip, boolean active) {
+        chip.setTextColor(active ? accent : muted);
+        UiStyle.typography(chip, active);
+        GradientDrawable background = box(active ? soft : Color.TRANSPARENT, 16);
+        background.setStroke(dp(1), active ? accent : border);
+        chip.setBackground(background);
+    }
     private void editor(Task original) {
         Task draft = original == null ? new Task() : original.copy();
         if (original == null) draft.taskDate = selected.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();
         if (original == null) draft.tag = getPreferences(MODE_PRIVATE).getString("defaultTag", "学习");
-        LinearLayout form = column(); form.setPadding(dp(24), dp(8), dp(24), dp(8));
         LocalDate taskDay = TaskDates.date(draft.taskDate == null ? draft.createdAt : draft.taskDate);
-        form.addView(text(taskDay.format(DateTimeFormatter.ofPattern("M月d日 · EEEE", Locale.CHINA)), 12, muted, false));
-        space(form, 8);
-        EditText title = new EditText(this); title.setHint("想完成什么？"); title.setText(draft.title); title.setTextSize(18); title.setMaxLines(4); title.setFilters(new InputFilter[]{new InputFilter.LengthFilter(200)}); form.addView(title);
+        BottomSheetDialog dialog = new BottomSheetDialog(this);
+        LinearLayout sheet = column();
+        sheet.setBackground(box(surface, 28));
+        sheet.setPadding(dp(20), dp(10), dp(20), 0);
+        sheet.setLayoutParams(new ViewGroup.LayoutParams(-1, -1));
+        View handle = new View(this); handle.setBackground(box(border, 3));
+        LinearLayout.LayoutParams handleParams = new LinearLayout.LayoutParams(dp(36), dp(4));
+        handleParams.gravity = Gravity.CENTER_HORIZONTAL;
+        sheet.addView(handle, handleParams); space(sheet, 12);
+        LinearLayout headerRow = row();
+        headerRow.addView(text(original == null ? "记下一件事" : "编辑事项", 20, ink, true), new LinearLayout.LayoutParams(0, -2, 1));
+        headerRow.addView(text(taskDay.format(DateTimeFormatter.ofPattern("M月d日 · EEEE", Locale.CHINA)), 12, muted, false));
+        sheet.addView(headerRow); space(sheet, 8);
+        LinearLayout form = column();
+        EditText title = new EditText(this); title.setHint("想完成什么？"); title.setText(draft.title); title.setTextSize(18); title.setMaxLines(4);
+        title.setFilters(new InputFilter[]{new InputFilter.LengthFilter(200)});
+        title.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
+        title.setBackgroundColor(Color.TRANSPARENT);
+        form.addView(title);
         UiStyle.typography(title, false);
-        space(form, 16); form.addView(text("优先级", 13, muted, true));
-        Spinner priority = new Spinner(this); ArrayAdapter<String> choices = UiStyle.choices(this, android.R.layout.simple_spinner_dropdown_item, new String[]{"● 低 · 不着急", "● 中 · 按计划", "● 高 · 优先处理"}); priority.setAdapter(choices); priority.setSelection(draft.priority); form.addView(priority, new LinearLayout.LayoutParams(-1, dp(52)));
+        space(form, 16); form.addView(text("优先级", 13, muted, true)); space(form, 6);
+        form.addView(chipRow(new String[]{"低 · 不着急", "中 · 按计划", "高 · 优先处理"}, draft.priority, i -> draft.priority = i));
         space(form, 12); form.addView(text("分类标签", 13, muted, true));
         AutoCompleteTextView tag = new AutoCompleteTextView(this); tag.setSingleLine(); tag.setText(draft.tag); tag.setHint("学习 / 工作 / 生活，也可以自定义"); tag.setFilters(new InputFilter[]{new InputFilter.LengthFilter(20)}); tag.setAdapter(UiStyle.choices(this, android.R.layout.simple_dropdown_item_1line, new String[]{"学习", "工作", "生活"})); tag.setThreshold(0); tag.setOnFocusChangeListener((v, focused) -> { if (focused) tag.showDropDown(); }); form.addView(tag);
         UiStyle.typography(tag, false);
-        space(form, 12); form.addView(text("重复", 13, muted, true));
-        Spinner repeatSpinner = new Spinner(this);
-        repeatSpinner.setAdapter(UiStyle.choices(this, android.R.layout.simple_spinner_dropdown_item, new String[]{"不重复", "每天重复", "每周重复"}));
-        repeatSpinner.setSelection(draft.repeat == null ? 0 : draft.repeat.equals("daily") ? 1 : draft.repeat.equals("weekly") ? 2 : 0);
-        form.addView(repeatSpinner, new LinearLayout.LayoutParams(-1, dp(52)));
+        space(form, 12); form.addView(text("重复", 13, muted, true)); space(form, 6);
+        form.addView(chipRow(new String[]{"不重复", "每天重复", "每周重复"}, draft.repeat == null || draft.repeat.isEmpty() ? 0 : draft.repeat.equals("daily") ? 1 : 2, i -> draft.repeat = new String[]{"", "daily", "weekly"}[i]));
         space(form, 18);
         TextView clearDuration = text("×", 22, muted, false);
         TextView duration = timeField(form, "预计耗时", clearDuration);
@@ -528,7 +569,7 @@ public class MainActivity extends AppCompatActivity {
             pickers.addView(hours, new LinearLayout.LayoutParams(0, -2, 1)); pickers.addView(text("小时", 13, muted, false));
             pickers.addView(minutes, new LinearLayout.LayoutParams(0, -2, 1)); pickers.addView(text("分钟", 13, muted, false));
             AlertDialog picker = new MaterialAlertDialogBuilder(this).setTitle("预计耗时").setView(pickers).setNegativeButton("取消", null).setPositiveButton("确定", null).create();
-            picker.setOnShowListener(dialog -> picker.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(button -> {
+            picker.setOnShowListener(shown -> picker.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(button -> {
                 pickers.clearFocus(); int value = hours.getValue() * 60 + minutes.getValue();
                 if (value == 0) { toast("预计耗时至少为 1 分钟"); return; }
                 draft.estimatedMinutes = value; refreshTimes.run(); picker.dismiss();
@@ -545,7 +586,7 @@ public class MainActivity extends AppCompatActivity {
                 time.setMinute(initial.getMinute());
                 new MaterialAlertDialogBuilder(this).setTitle("提醒时间").setView(time)
                     .setNegativeButton("取消", null)
-                    .setPositiveButton("确定", (dialog, which) -> {
+                    .setPositiveButton("确定", (confirmed, which) -> {
                         time.clearFocus();
                         draft.reminderAt = LocalDateTime.of(year, m + 1, day, time.getHour(), time.getMinute()).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
                         refreshTimes.run();
@@ -601,12 +642,12 @@ public class MainActivity extends AppCompatActivity {
         UiStyle.typography(note, false);
         space(form, 12); form.addView(text("按你设置的时间提醒；预计耗时与提醒时间可以分别设置。", 12, muted, false));
         ScrollView sc = new ScrollView(this); sc.addView(form);
-        AlertDialog dialog = new MaterialAlertDialogBuilder(this).setTitle(original == null ? "记下一件事" : "编辑事项").setView(sc).setNegativeButton("取消", null).setPositiveButton("保存", null).create();
-        dialog.setOnShowListener(v -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(b -> {
+        sheet.addView(sc, new LinearLayout.LayoutParams(-1, 0, 1));
+        space(sheet, 8);
+        Runnable saveAttempt = () -> {
             if (title.getText().toString().trim().isEmpty()) { title.setError("先写一点内容吧"); return; }
             if (draft.reminderAt != null && draft.reminderAt <= System.currentTimeMillis() && (original == null || !Objects.equals(original.reminderAt, draft.reminderAt))) { toast("提醒时间需要晚于现在"); return; }
-            draft.title = title.getText().toString().trim(); draft.tag = tag.getText().toString().trim(); draft.priority = priority.getSelectedItemPosition();
-            draft.repeat = new String[]{"", "daily", "weekly"}[repeatSpinner.getSelectedItemPosition()];
+            draft.title = title.getText().toString().trim(); draft.tag = tag.getText().toString().trim();
             draft.note = note.getText().toString().trim();
             org.json.JSONArray steps = new org.json.JSONArray();
             for (int i = 0; i < stepTexts.size(); i++) {
@@ -616,7 +657,28 @@ public class MainActivity extends AppCompatActivity {
             }
             draft.substeps = steps.toString();
             save(draft); dialog.dismiss(); if (draft.reminderAt != null) requestNotifications();
-        })); dialog.show();
+        };
+        LinearLayout actions = row();
+        actions.addView(button("取消", false, dialog::dismiss), new LinearLayout.LayoutParams(0, -2, 1));
+        View actionsGap = new View(this);
+        actions.addView(actionsGap, new LinearLayout.LayoutParams(dp(10), 1));
+        actions.addView(button("保存", true, saveAttempt::run), new LinearLayout.LayoutParams(0, -2, 1));
+        sheet.addView(actions); space(sheet, 14);
+        dialog.setContentView(sheet);
+        if (dialog.getWindow() != null) dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        com.google.android.material.bottomsheet.BottomSheetBehavior<?> behavior = dialog.getBehavior();
+        behavior.setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED);
+        behavior.setSkipCollapsed(true);
+        title.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) { saveAttempt.run(); return true; }
+            return false;
+        });
+        dialog.setOnShowListener(d -> title.postDelayed(() -> {
+            title.requestFocus();
+            android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            if (imm != null) imm.showSoftInput(title, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+        }, 200));
+        dialog.show();
     }
     private void calendarPage() {
         LinearLayout controls = row();
@@ -824,8 +886,10 @@ public class MainActivity extends AppCompatActivity {
         space(body, 28); TextView version = text("一件一件 · " + BuildConfig.VERSION_NAME, 12, muted, false); version.setGravity(Gravity.CENTER); body.addView(version);
     }
     private LinearLayout settingsGroup() {
-        LinearLayout group = column(); group.setPadding(dp(14), dp(2), dp(14), dp(2)); group.setBackground(box(surface, 22));
-        group.setElevation(dp(1.5f));
+        LinearLayout group = column(); group.setPadding(dp(14), dp(2), dp(14), dp(2));
+        GradientDrawable background = box(surface, 22); background.setStroke(dp(1), border);
+        group.setBackground(background);
+        group.setElevation(dp(1));
         if (Build.VERSION.SDK_INT >= 28) group.setOutlineAmbientShadowColor(color("#593A2E1E"));
         return group;
     }

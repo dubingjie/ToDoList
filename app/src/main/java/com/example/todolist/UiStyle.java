@@ -48,6 +48,13 @@ final class UiStyle {
         return new RippleDrawable(ColorStateList.valueOf((accent & 0x00ffffff) | 0x18000000),
             shape(context, fill, radius), shape(context, Color.WHITE, radius));
     }
+    /** Pressable card with a hairline border: flat, refined, less "floating". */
+    static Drawable pressBordered(Context context, int fill, int radius, int strokeColor, int accent) {
+        GradientDrawable content = shape(context, fill, radius);
+        content.setStroke(dp(context, 1), strokeColor);
+        return new RippleDrawable(ColorStateList.valueOf((accent & 0x00ffffff) | 0x18000000),
+            content, shape(context, Color.WHITE, radius));
+    }
     static Drawable icon(Context context, String name, int color, int size) {
         return new StrokeIcon(name, color, dp(context, size));
     }
