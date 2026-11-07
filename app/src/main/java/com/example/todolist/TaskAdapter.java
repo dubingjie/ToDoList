@@ -25,8 +25,9 @@ final class TaskAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         void onMore(Task task);
         void onSwipeComplete(Task task);
         void onSwipeDelete(Task task);
+        void onOpenStats();
     }
-    private static final int CALENDAR = 0, SECTION = 1, TASK = 2, EMPTY = 3, SPACER = 4;
+    private static final int CALENDAR = 0, SECTION = 1, TASK = 2, EMPTY = 3, SPACER = 4, CARDS = 5;
     private static final class Row {
         final int type; final String key; final String text; final Task task;
         Row(int type, String key, String text, Task task) {
@@ -39,6 +40,7 @@ final class TaskAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private final Supplier<View> calendar;
     private final Listener listener;
     private final List<Row> rows = new ArrayList<>();
+    private List<Task> lastTasks = new ArrayList<>();
     private boolean first = true;
     private View calendarView;
     private FrameLayout calendarHolder;
@@ -70,35 +72,24 @@ final class TaskAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         return new int[]{done, total};
     }
 
-    private static boolean matches(Task t, String query, String tagFilter) {
-        if (t.deletedAt != null) return false;
-        if (!tagFilter.isEmpty() && !tagFilter.equals(t.tag)) return false;
-        if (query.isEmpty()) return true;
-        String haystack = (t.title + "\n" + t.tag + "\n" + t.note).toLowerCase();
-        return haystack.contains(query.toLowerCase());
-    }
-
-    void setData(List<Task> tasks, LocalDate selected, String query, String tagFilter) {
-        boolean searching = !query.isEmpty() || !tagFilter.isEmpty();
+    void setData(List<Task> tasks, LocalDate selected) {
+        lastTasks = tasks;
         List<Row> next = new ArrayList<>();
         next.add(new Row(CALENDAR, "calendar", "", null));
-        next.add(new Row(SECTION, "section-done", searching ? "已完成 · 全部日期" : selected.format(DateTimeFormatter.ofPattern("M月d日")) + " · 已完成", null));
-        List<Task> completed = new ArrayList<>();
-        if (searching) {
-            for (Task t : tasks) if (t.completedAt != null && matches(t, query, tagFilter)) completed.add(t);
-            completed.sort((a, b) -> Long.compare(b.completedAt, a.completedAt));
-        } else completed = MonthGrid.tasksOn(tasks, selected);
-        if (completed.isEmpty()) next.add(new Row(EMPTY, "empty-done", searching ? "没有匹配的已完成事项" : "当天暂无完成记录", null));
+        next.add(new Row(CARDS, "cards", cardsSummary(tasks), null));
+        next.add(new Row(SECTION, "section-done", "🌷 " + selected.format(DateTimeFormatter.ofPattern("M月d日")) + " · 已完成", null));
+        List<Task> completed = MonthGrid.tasksOn(tasks, selected);
+        if (completed.isEmpty()) next.add(new Row(EMPTY, "empty-done", "当天暂无完成记录", null));
         for (Task t : completed) next.add(new Row(TASK, "task-" + t.id, "", t.copy()));
-        boolean historical = !searching && selected.isBefore(LocalDate.now());
-        next.add(new Row(SECTION, "section-pending", searching ? "待办 · 全部日期" : historical ? "未完成" : "待办", null));
+        boolean historical = selected.isBefore(LocalDate.now());
+        next.add(new Row(SECTION, "section-pending", historical ? "🍂 未完成" : "🌱 待办", null));
         int pending = 0;
         for (Task t : tasks) {
-            boolean visible = searching ? (t.completedAt == null && matches(t, query, tagFilter))
-                : (TaskDates.visibleInDateList(t, selected) && t.completedAt == null);
-            if (visible) { next.add(new Row(TASK, "task-" + t.id, "", t.copy())); pending++; }
+            if (TaskDates.visibleInDateList(t, selected) && t.completedAt == null) {
+                next.add(new Row(TASK, "task-" + t.id, "", t.copy())); pending++;
+            }
         }
-        if (pending == 0) next.add(new Row(EMPTY, "empty-pending", searching ? "没有匹配的待办事项" : historical ? "没有未完成事项" : "今天很轻松，享受吧！", null));
+        if (pending == 0) next.add(new Row(EMPTY, "empty-pending", historical ? "没有未完成事项" : "今天很轻松，享受吧！", null));
         next.add(new Row(SPACER, "spacer", "", null));
         calendarView = calendar.get();
         if (calendarHolder != null) {
@@ -127,6 +118,26 @@ final class TaskAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         });
         rows.clear(); rows.addAll(next);
         diff.dispatchUpdatesTo(this);
+    }
+
+    private static String cardsSummary(List<Task> tasks) {
+        LocalDate today = LocalDate.now();
+        int total = TaskDates.countAssigned(tasks, today, today.plusDays(1), false);
+        int done = TaskDates.countAssigned(tasks, today, today.plusDays(1), true);
+        int[] streak = streakInfo(tasks);
+        return done + "/" + total + ":" + streak[0] + ":" + streak[1];
+    }
+    private static int[] streakInfo(List<Task> tasks) {
+        Set<LocalDate> days = new HashSet<>();
+        for (Task t : tasks) if (t.deletedAt == null && t.completedAt != null) days.add(TaskDates.date(t.completedAt));
+        LocalDate day = LocalDate.now();
+        if (!days.contains(day)) day = day.minusDays(1);
+        int streak = 0;
+        while (days.contains(day)) { streak++; day = day.minusDays(1); }
+        int mask = 0;
+        LocalDate today = LocalDate.now();
+        for (int i = 0; i < 7; i++) if (days.contains(today.minusDays(6 - i))) mask |= 1 << i;
+        return new int[]{streak, mask};
     }
 
     private static boolean sameTask(Task a, Task b) {
@@ -169,6 +180,43 @@ final class TaskAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 view.setLayoutParams(new RecyclerView.LayoutParams(1, dp(84)));
                 return new RecyclerView.ViewHolder(view) {};
             }
+            case CARDS: {
+                LinearLayout row = new LinearLayout(context); row.setBaselineAligned(false);
+                RecyclerView.LayoutParams params = new RecyclerView.LayoutParams(-1, -2);
+                params.setMargins(dp(16), dp(2), dp(16), dp(6));
+                row.setLayoutParams(params);
+                LinearLayout progress = dashCard();
+                progress.addView(dashLabel("今日进度"));
+                TextView progressValue = dashValue("0 / 0"); progressValue.setTag("progressValue");
+                progress.addView(progressValue);
+                ProgressBar bar = new ProgressBar(context, null, android.R.attr.progressBarStyleHorizontal);
+                bar.setTag("progressBar"); bar.setProgressTintList(android.content.res.ColorStateList.valueOf(accent));
+                bar.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(soft));
+                LinearLayout.LayoutParams barParams = new LinearLayout.LayoutParams(-1, dp(6));
+                barParams.setMargins(0, dp(8), 0, dp(6));
+                progress.addView(bar, barParams);
+                TextView progressSub = text("", 11, muted, false); progressSub.setTag("progressSub");
+                progress.addView(progressSub);
+                LinearLayout.LayoutParams leftParams = new LinearLayout.LayoutParams(0, -2, 1);
+                leftParams.setMargins(0, 0, dp(5), 0);
+                row.addView(progress, leftParams);
+                LinearLayout streak = dashCard();
+                streak.addView(dashLabel("连续打卡"));
+                TextView streakValue = dashValue("0 天"); streakValue.setTag("streakValue");
+                streak.addView(streakValue);
+                LinearLayout dots = new LinearLayout(context); dots.setTag("dots");
+                for (int i = 0; i < 7; i++) {
+                    View dot = new View(context);
+                    LinearLayout.LayoutParams dotParams = new LinearLayout.LayoutParams(dp(10), dp(10));
+                    dotParams.setMargins(dp(2), dp(10), dp(2), 0);
+                    dots.addView(dot, dotParams);
+                }
+                streak.addView(dots);
+                LinearLayout.LayoutParams rightParams = new LinearLayout.LayoutParams(0, -2, 1);
+                rightParams.setMargins(dp(5), 0, 0, 0);
+                row.addView(streak, rightParams);
+                return new RecyclerView.ViewHolder(row) {};
+            }
             default: return new RecyclerView.ViewHolder(taskView()) {};
         }
     }
@@ -184,6 +232,7 @@ final class TaskAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 break;
             }
             case SECTION: ((TextView) holder.itemView).setText(row.text); break;
+            case CARDS: bindCards(holder.itemView); break;
             case EMPTY: {
                 ((TextView) holder.itemView.findViewWithTag("emoji")).setText(
                     row.text.startsWith("没有匹配") ? "🔍" : row.text.equals("没有未完成事项") ? "🌙" : row.text.contains("完成") ? "🌤" : "🌿");
@@ -194,11 +243,50 @@ final class TaskAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         }
     }
 
+    private LinearLayout dashCard() {
+        LinearLayout card = new LinearLayout(context);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(14), dp(12), dp(14), dp(12));
+        card.setBackground(UiStyle.press(context, surface, 20, accent));
+        card.setElevation(dp(1));
+        if (Build.VERSION.SDK_INT >= 28) card.setOutlineAmbientShadowColor(Color.parseColor("#593A2E1E"));
+        card.setOnClickListener(v -> listener.onOpenStats());
+        return card;
+    }
+    private TextView dashLabel(String label) {
+        return text(label, 11, muted, false);
+    }
+    private TextView dashValue(String value) {
+        TextView view = text(value, 22, ink, true);
+        view.setPadding(0, dp(2), 0, 0);
+        return view;
+    }
+    private void bindCards(View itemView) {
+        LocalDate today = LocalDate.now();
+        int total = TaskDates.countAssigned(lastTasks, today, today.plusDays(1), false);
+        int done = TaskDates.countAssigned(lastTasks, today, today.plusDays(1), true);
+        ((TextView) itemView.findViewWithTag("progressValue")).setText(done + " / " + total);
+        ProgressBar bar = itemView.findViewWithTag("progressBar");
+        bar.setMax(Math.max(1, total)); bar.setProgress(done);
+        ((TextView) itemView.findViewWithTag("progressSub")).setText(
+            total == 0 ? "今天还没有安排事项" : done == total ? "全部完成，太棒了！" : "已完成 " + Math.round(done * 100f / total) + "%");
+        int[] streak = streakInfo(lastTasks);
+        ((TextView) itemView.findViewWithTag("streakValue")).setText(streak[0] + " 天");
+        LinearLayout dots = itemView.findViewWithTag("dots");
+        for (int i = 0; i < dots.getChildCount(); i++) {
+            boolean filled = (streak[1] & (1 << i)) != 0;
+            android.graphics.drawable.GradientDrawable dot = new android.graphics.drawable.GradientDrawable();
+            dot.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+            dot.setColor(filled ? accent : blend(accent, surface, .16f));
+            dots.getChildAt(i).setBackground(dot);
+        }
+    }
+
     private View taskView() {
         LinearLayout card = new LinearLayout(context);
         card.setGravity(Gravity.CENTER_VERTICAL);
         card.setPadding(dp(6), dp(8), dp(6), dp(8));
-        card.setBackground(UiStyle.press(context, surface, 18, accent));
+        card.setBackground(UiStyle.press(context, surface, 20, accent));
         card.setElevation(dp(1));
         if (Build.VERSION.SDK_INT >= 28) card.setOutlineAmbientShadowColor(Color.parseColor("#593A2E1E"));
         ImageButton check = new ImageButton(context); check.setTag("check");
@@ -226,9 +314,14 @@ final class TaskAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         if (t.completedAt != null) title.setPaintFlags(title.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG);
         content.addView(title); space(content, 2);
         LinearLayout meta = new LinearLayout(context); meta.setGravity(Gravity.CENTER_VERTICAL);
-        meta.addView(text(t.tag.isEmpty() ? "未分类" : t.tag, 11, muted, false));
-        meta.addView(text("  ·  ", 11, muted, false));
-        meta.addView(text(new String[]{"低优先级", "中优先级", "高优先级"}[t.priority], 11,
+        int tagColor = tagColor(t.tag);
+        TextView pill = text(t.tag.isEmpty() ? "未分类" : t.tag, 10, dark ? blend(tagColor, Color.WHITE, .35f) : tagColor, false);
+        android.graphics.drawable.GradientDrawable pillBg = new android.graphics.drawable.GradientDrawable();
+        pillBg.setColor(blend(tagColor, surface, dark ? .30f : .15f)); pillBg.setCornerRadius(dp(10));
+        pill.setBackground(pillBg);
+        pill.setPadding(dp(8), dp(2), dp(8), dp(2));
+        meta.addView(pill);
+        meta.addView(text("  " + new String[]{"低优先级", "中优先级", "高优先级"}[t.priority], 11,
             t.priority == 2 ? color(dark ? "#F0A89B" : "#C96A5A") : t.priority == 1 ? color(dark ? "#EFBE93" : "#B08A3E") : muted, false));
         content.addView(meta);
         String timing = t.repeat == null ? "" : t.repeat.equals("daily") ? "每天重复" : t.repeat.equals("weekly") ? "每周重复" : "";
@@ -266,6 +359,26 @@ final class TaskAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     private int dp(float value) { return UiStyle.dp(context, value); }
     private int color(String value) { return Color.parseColor(value); }
+    private int tagColor(String tag) {
+        switch (tag == null || tag.isEmpty() ? "" : tag) {
+            case "学习": return color("#6E93BC");
+            case "工作": return color("#8F7FBE");
+            case "生活": return color("#6F8F6A");
+            case "": return muted;
+            default: {
+                int[] palette = {color("#C4748A"), color("#CE8A4E"), color("#5E9A94"), color("#B08A3E")};
+                return palette[Math.floorMod(tag.hashCode(), palette.length)];
+            }
+        }
+    }
+    private static int blend(int a, int b, float fraction) {
+        float inverse = 1f - fraction;
+        return Color.argb(
+            Math.round(Color.alpha(a) * fraction + Color.alpha(b) * inverse),
+            Math.round(Color.red(a) * fraction + Color.red(b) * inverse),
+            Math.round(Color.green(a) * fraction + Color.green(b) * inverse),
+            Math.round(Color.blue(a) * fraction + Color.blue(b) * inverse));
+    }
     private String dateTime(long time) {
         return Instant.ofEpochMilli(time).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("M月d日 HH:mm"));
     }
@@ -295,7 +408,7 @@ final class TaskAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             checkIcon = UiStyle.icon(context, "check", Color.WHITE, 22);
             trashIcon = UiStyle.icon(context, "trash", Color.WHITE, 22);
             iconInset = UiStyle.dp(context, 20);
-            corner = UiStyle.dp(context, 18);
+            corner = UiStyle.dp(context, 20);
         }
         @Override public int getMovementFlags(RecyclerView recyclerView, RecyclerView.ViewHolder viewHolder) {
             int position = viewHolder.getBindingAdapterPosition();

@@ -54,8 +54,7 @@ public class MainActivity extends AppCompatActivity {
     private MainViewModel vm;
     private View navView;
     private boolean fadeIn;
-    private String query = "", tagFilter = "";
-    private static final int EXPORT_BACKUP = 105, IMPORT_BACKUP = 106;
+    private static final int EXPORT_BACKUP = 105, IMPORT_BACKUP = 106, EXPORT_POSTER = 107;
     private int reviewType, statsTab;
     private LocalDate reviewDate = LocalDate.now();
     private boolean reviewDetail, reviewReading;
@@ -133,7 +132,7 @@ public class MainActivity extends AppCompatActivity {
         reviewBackRegistered = needed;
     }
     private void colors() {
-        bg = color(dark ? "#1B1611" : "#FBF7F0"); surface = color(dark ? "#292118" : "#FFFFFF");
+        bg = color(dark ? "#1B1611" : "#FAF4EA"); surface = color(dark ? "#292118" : "#FFFFFF");
         ink = color(dark ? "#F0E8DB" : "#3F3A33"); muted = color(dark ? "#AB9F8C" : "#A39A8B");
         border = color(dark ? "#3C342A" : "#EFE6D8");
         accent = color(paletteAccent());
@@ -191,7 +190,7 @@ public class MainActivity extends AppCompatActivity {
         return l;
     }
     private void refreshContent() {
-        if (homeAdapter != null && page.equals("清单")) homeAdapter.setData(tasks, selected, query, tagFilter); else render();
+        if (homeAdapter != null && page.equals("清单")) homeAdapter.setData(tasks, selected); else render();
     }
     private void render() {
         if (activeReview != null) { reviewDetail = activeReview.isDetail(); reviewReading = activeReview.isReading(); activeReview.persist(); activeReview = null; }
@@ -279,6 +278,7 @@ public class MainActivity extends AppCompatActivity {
                 toggle(t);
             }
             @Override public void onSwipeDelete(Task t) { delete(t); }
+            @Override public void onOpenStats() { savedScrollY = 0; page = "统计"; statsTab = 0; fadeIn = true; render(); }
         };
         homeAdapter = new TaskAdapter(this, dark, surface, ink, muted, accent, soft, this::homeHeaderView, listener);
         RecyclerView list = new RecyclerView(this);
@@ -286,70 +286,8 @@ public class MainActivity extends AppCompatActivity {
         list.setClipToPadding(false);
         list.setAdapter(homeAdapter);
         new ItemTouchHelper(new TaskAdapter.Swipe(homeAdapter, listener, this, dark, accent)).attachToRecyclerView(list);
-        shell.addView(searchBar(), new LinearLayout.LayoutParams(-1, -2));
         shell.addView(list, new LinearLayout.LayoutParams(-1, 0, 1));
-        homeAdapter.setData(tasks, selected, query, tagFilter);
-    }
-    private View searchBar() {
-        LinearLayout bar = column();
-        bar.setPadding(dp(16), dp(6), dp(16), dp(2));
-        bar.setBackgroundColor(bg);
-        LinearLayout field = row();
-        field.setBackground(box(soft, 20));
-        ImageView icon = new ImageView(this);
-        icon.setImageDrawable(UiStyle.icon(this, "search", muted, 18));
-        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(18), dp(18));
-        iconParams.setMargins(dp(12), 0, dp(6), 0);
-        field.addView(icon, iconParams);
-        EditText input = new EditText(this);
-        input.setHint("搜索事项、备注或标签"); input.setTextSize(14); input.setSingleLine();
-        input.setTextColor(ink); input.setHintTextColor(muted);
-        input.setBackgroundColor(Color.TRANSPARENT); input.setText(query);
-        UiStyle.typography(input, false);
-        input.addTextChangedListener(new TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
-            @Override public void afterTextChanged(Editable s) {
-                query = s.toString().trim();
-                if (homeAdapter != null) homeAdapter.setData(tasks, selected, query, tagFilter);
-            }
-        });
-        field.addView(input, new LinearLayout.LayoutParams(0, dp(44), 1));
-        bar.addView(field);
-        LinkedHashSet<String> tags = new LinkedHashSet<>(Arrays.asList("学习", "工作", "生活"));
-        for (Task t : tasks) if (t.tag != null && !t.tag.isEmpty()) tags.add(t.tag);
-        HorizontalScrollView scroller = new HorizontalScrollView(this);
-        scroller.setHorizontalScrollBarEnabled(false);
-        LinearLayout chips = row();
-        addTagChip(chips, "全部", tagFilter.isEmpty());
-        for (String tag : tags) addTagChip(chips, tag, tagFilter.equals(tag));
-        scroller.addView(chips);
-        bar.addView(scroller, new LinearLayout.LayoutParams(-1, -2));
-        return bar;
-    }
-    private void addTagChip(LinearLayout chips, String label, boolean active) {
-        TextView chip = text(label, 13, active ? accent : muted, active);
-        chip.setGravity(Gravity.CENTER);
-        GradientDrawable bg = box(active ? soft : Color.TRANSPARENT, 16);
-        if (active) bg.setStroke(dp(1), accent);
-        chip.setBackground(bg);
-        chip.setOnClickListener(v -> {
-            tagFilter = label.equals("全部") ? "" : label;
-            for (int i = 0; i < chips.getChildCount(); i++) {
-                TextView c = (TextView) chips.getChildAt(i);
-                boolean on = c.getText().toString().equals(label);
-                c.setTextColor(on ? accent : muted);
-                UiStyle.typography(c, on);
-                GradientDrawable cbg = box(on ? soft : Color.TRANSPARENT, 16);
-                if (on) cbg.setStroke(dp(1), accent);
-                c.setBackground(cbg);
-            }
-            if (homeAdapter != null) homeAdapter.setData(tasks, selected, query, tagFilter);
-        });
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, dp(34));
-        params.setMargins(0, dp(6), dp(8), dp(4));
-        chip.setPadding(dp(12), 0, dp(12), 0);
-        chips.addView(chip, params);
+        homeAdapter.setData(tasks, selected);
     }
     private View homeHeaderView() {
         LinearLayout container = column(); container.setBackgroundColor(bg); container.setPadding(dp(16), dp(2), dp(16), 0);
@@ -813,6 +751,14 @@ public class MainActivity extends AppCompatActivity {
         int totalCompleted = (int) tasks.stream().filter(t -> t.deletedAt == null && t.completedAt != null).count();
         body.addView(text("累计完成 " + totalCompleted + " 件", 13, muted, false));
         space(body, 8); body.addView(text("完成率按事项所属日期统计：本周事项中已完成的比例。七天图表与月视图按实际完成日期记录。", 12, muted, false));
+        space(body, 24);
+        TextView poster = button("🎨 生成本周分享海报", true, this::exportPoster);
+        body.addView(poster, new LinearLayout.LayoutParams(-1, dp(52)));
+        space(body, 24);
+    }
+    private void exportPoster() {
+        startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("image/png").addCategory(Intent.CATEGORY_OPENABLE)
+            .putExtra(Intent.EXTRA_TITLE, "周报海报-" + LocalDate.now() + ".png"), EXPORT_POSTER);
     }
     private int streakDays() {
         Set<LocalDate> days = new HashSet<>();
@@ -1125,6 +1071,20 @@ public class MainActivity extends AppCompatActivity {
         Uri uri = data.getData();
         if (request == EXPORT_BACKUP) { writeBackup(uri); return; }
         if (request == IMPORT_BACKUP) { readBackup(uri); return; }
+        if (request == EXPORT_POSTER) {
+            TodoDb.IO.execute(() -> {
+                android.graphics.Bitmap bitmap = null;
+                try {
+                    bitmap = PosterImage.create(this, TodoDb.get(this).tasks().all(), bg, surface, ink, muted, accent, soft);
+                    try (OutputStream stream = getContentResolver().openOutputStream(uri, "wt")) {
+                        if (stream == null || !bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, stream)) throw new IOException("无法写入图片");
+                    }
+                    main.post(() -> toast("海报已保存，去晒一晒吧"));
+                } catch (Exception e) { main.post(() -> toast("生成失败，请检查保存位置后重试")); }
+                finally { if (bitmap != null) bitmap.recycle(); }
+            });
+            return;
+        }
         if (request != EXPORT_MONTH) return;
         YearMonth exporting = pendingExportMonth;
         TodoDb.IO.execute(() -> {
