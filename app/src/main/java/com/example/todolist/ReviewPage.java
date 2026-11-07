@@ -1,7 +1,7 @@
 package com.example.todolist;
 
-import android.app.AlertDialog;
 import android.app.DatePickerDialog;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import android.content.Context;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -105,7 +105,7 @@ final class ReviewPage extends LinearLayout {
             more.setContentDescription("复盘更多操作");
             more.setOnClickListener(v -> {
                 if (record == null) return;
-                new AlertDialog.Builder(getContext()).setItems(new String[]{"删除这篇复盘"}, (dialog, which) -> confirmDelete()).show();
+                new MaterialAlertDialogBuilder(getContext()).setItems(new String[]{"删除这篇复盘"}, (dialog, which) -> confirmDelete()).show();
             }); header.addView(more, new LayoutParams(dp(48), dp(48)));
             addView(header);
             TextView date = text(dateTitle(start) + (reading ? "" : "  ▾"), 12, muted, false); date.setPadding(dp(8), 0, dp(8), 0);
@@ -144,7 +144,7 @@ final class ReviewPage extends LinearLayout {
     private void confirmDelete() {
         if (record == null) return;
         String key = record.id;
-        new AlertDialog.Builder(getContext()).setTitle("删除这篇复盘？")
+        new MaterialAlertDialogBuilder(getContext()).setTitle("删除这篇复盘？")
             .setMessage("复盘内容删除后无法恢复，任务记录和周、月目标会保留。")
             .setNegativeButton("取消", null).setPositiveButton("删除", (dialog, which) -> {
                 if (record == null || !record.id.equals(key)) return;
@@ -223,7 +223,7 @@ final class ReviewPage extends LinearLayout {
         facts.addView(execution);
         if (completed + unfinished > 0) {
             final String details = (done.length() == 0 ? "" : "已完成\n" + done + "\n") + (pending.length() == 0 ? "" : "未完成\n" + pending);
-            facts.setOnClickListener(v -> new AlertDialog.Builder(getContext()).setTitle("本期任务记录").setMessage(details.trim()).setPositiveButton("关闭", null).show());
+            facts.setOnClickListener(v -> new MaterialAlertDialogBuilder(getContext()).setTitle("本期任务记录").setMessage(details.trim()).setPositiveButton("关闭", null).show());
         }
         addView(facts); gap(this, 18);
         LinearLayout heading = row(); heading.addView(text(reading ? "复盘内容" : "收获与想法", 17, ink, true), new LayoutParams(0, dp(40), 1));
@@ -299,7 +299,7 @@ final class ReviewPage extends LinearLayout {
             Spinner state = new Spinner(getContext()); state.setAdapter(UiStyle.choices(getContext(), android.R.layout.simple_spinner_dropdown_item, new String[]{"进行中", "已达成", "未达成"})); state.setSelection(goal == null ? 0 : Math.max(0, Math.min(2, goal.optInt("state")))); form.addView(state, new LayoutParams(-1, dp(48))); states.add(state); gap(form, 12);
         }
         ScrollView scroll = new ScrollView(getContext()); scroll.addView(form);
-        new AlertDialog.Builder(getContext()).setTitle("重点目标 · 最多 3 项").setView(scroll).setNegativeButton("取消", null).setPositiveButton("保存", (d, w) -> {
+        new MaterialAlertDialogBuilder(getContext()).setTitle("重点目标 · 最多 3 项").setView(scroll).setNegativeButton("取消", null).setPositiveButton("保存", (d, w) -> {
             JSONArray updated = new JSONArray();
             for (int i = 0; i < 3; i++) {
                 String title = titles.get(i).getText().toString().trim(); if (title.isEmpty()) continue;
@@ -320,7 +320,7 @@ final class ReviewPage extends LinearLayout {
                 for (int i = 0; i < old.length(); i++) { JSONObject goal = old.optJSONObject(i); if (goal != null && goal.optInt("state") != 1) available.add(goal); }
                 if (available.isEmpty()) { Toast.makeText(getContext(), "上期没有可带入的目标", Toast.LENGTH_SHORT).show(); return; }
                 String[] labels = new String[available.size()]; for (int i = 0; i < labels.length; i++) labels[i] = available.get(i).optString("title"); boolean[] checked = new boolean[labels.length];
-                new AlertDialog.Builder(getContext()).setTitle("选择继续的目标").setMultiChoiceItems(labels, checked, (d, i, on) -> checked[i] = on).setNegativeButton("取消", null).setPositiveButton("带入", (d, w) -> {
+                new MaterialAlertDialogBuilder(getContext()).setTitle("选择继续的目标").setMultiChoiceItems(labels, checked, (d, i, on) -> checked[i] = on).setNegativeButton("取消", null).setPositiveButton("带入", (d, w) -> {
                     int count = 0; for (boolean on : checked) if (on) count++;
                     if (goals.length() + count > 3) { Toast.makeText(getContext(), "最多保留 3 个重点目标，请先编辑现有目标", Toast.LENGTH_LONG).show(); return; }
                     for (int i = 0; i < checked.length; i++) if (checked[i]) { JSONObject goal = new JSONObject(); try { goal.put("title", labels[i]); goal.put("approach", available.get(i).optString("approach")); goal.put("state", 0); } catch (JSONException ignored) {} goals.put(goal); }

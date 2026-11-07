@@ -16,13 +16,22 @@ import android.text.*;
 import android.view.*;
 import android.widget.*;
 import android.annotation.SuppressLint;
+import androidx.appcompat.app.AlertDialog;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.recyclerview.widget.*;
+import com.google.android.material.bottomnavigation.BottomNavigationView;
+import com.google.android.material.navigation.NavigationBarView;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.floatingactionbutton.FloatingActionButton;
+import com.google.android.material.materialswitch.MaterialSwitch;
+import com.google.android.material.snackbar.Snackbar;
 import java.io.*;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.TemporalAdjusters;
 import java.util.*;
 
-public class MainActivity extends Activity {
+public class MainActivity extends AppCompatActivity {
     private final Handler main = new Handler(Looper.getMainLooper());
     private List<Task> tasks = new ArrayList<>();
     private List<Task> trashed = new ArrayList<>();
@@ -40,6 +49,9 @@ public class MainActivity extends Activity {
     private int savedScrollY;
     private ScrollView activeScroll;
     private ReviewPage activeReview;
+    private TaskAdapter homeAdapter;
+    private View navView;
+    private boolean fadeIn;
     private int reviewType, statsTab;
     private LocalDate reviewDate = LocalDate.now();
     private boolean reviewDetail, reviewReading;
@@ -136,11 +148,16 @@ public class MainActivity extends Activity {
     private void heading(String name, String sub) { body.addView(text(name, 30, ink, true)); space(body, 6); body.addView(text(sub, 13, muted, false)); space(body, 24); }
     private LinearLayout card() { LinearLayout l = column(); l.setPadding(dp(18), dp(18), dp(18), dp(18)); l.setBackground(box(surface, 18)); return l; }
     private void reload() {
-        TodoDb.IO.execute(() -> { List<Task> all = TodoDb.get(this).tasks().all(); List<Task> trash = TodoDb.get(this).tasks().trash(); main.post(() -> { if (!isDestroyed()) { tasks = all; trashed = trash; render(); } }); });
+        TodoDb.IO.execute(() -> { List<Task> all = TodoDb.get(this).tasks().all(); List<Task> trash = TodoDb.get(this).tasks().trash(); main.post(() -> {
+            if (isDestroyed()) return;
+            tasks = all; trashed = trash;
+            if (homeAdapter != null && page.equals("清单")) homeAdapter.setData(all, selected); else render();
+        }); });
     }
     private void render() {
         if (activeReview != null) { reviewDetail = activeReview.isDetail(); reviewReading = activeReview.isReading(); activeReview.persist(); activeReview = null; }
         if (activeScroll != null) savedScrollY = activeScroll.getScrollY();
+        homeAdapter = null;
         root = new FrameLayout(this); root.setBackgroundColor(bg); root.setClipChildren(false);
         root.setOnApplyWindowInsetsListener((v, insets) -> {
             if (Build.VERSION.SDK_INT >= 30) {
@@ -154,34 +171,47 @@ public class MainActivity extends Activity {
         boolean calendar = page.equals("统计") && statsTab == 1;
         LinearLayout shell = column(); shell.setBackgroundColor(bg);
         root.addView(shell, new FrameLayout.LayoutParams(-1, -1));
-        ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true); scroll.setClipToPadding(false); activeScroll = scroll;
-        scroll.setOnScrollChangeListener((v, x, y, oldX, oldY) -> savedScrollY = y);
-        body = column(); body.setPadding(dp(calendar ? 4 : 16), dp(list ? 2 : 8), dp(calendar ? 4 : 16), dp(calendar ? 0 : 12));
-        if (calendar) shell.addView(body, new LinearLayout.LayoutParams(-1, 0, 1));
-        else { scroll.addView(body); shell.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1)); scroll.post(() -> scroll.scrollTo(0, savedScrollY)); }
-        if (list) homePage(); else if (page.equals("复盘")) reviewPage(); else if (calendar) { statisticsHeader(); calendarPage(); } else if (page.equals("统计")) statsPage(); else if (page.equals("回收站")) trashPage(); else settingsPage();
-        LinearLayout nav = row(); nav.setPadding(dp(12), dp(4), dp(12), dp(4)); nav.setBackgroundColor(surface);
-        for (String tab : new String[]{"清单", "复盘", "统计", "设置"}) {
-            boolean active = tab.equals(page) || (tab.equals("设置") && page.equals("回收站"));
-            boolean narrowNav = getResources().getConfiguration().screenWidthDp < 360 || getResources().getConfiguration().fontScale > 1.2f;
-            TextView b = text(tab, narrowNav ? 12 : 13, active ? accent : muted, active);
-            b.setCompoundDrawables(UiStyle.icon(this, tab.equals("清单") ? "list" : tab.equals("复盘") ? "review" : tab.equals("统计") ? "stats" : "settings", active ? accent : muted, narrowNav ? 18 : 20), null, null, null);
-            b.setCompoundDrawablePadding(dp(narrowNav ? 4 : 6)); b.setPadding(dp(narrowNav ? 4 : 10), 0, dp(narrowNav ? 4 : 10), 0); b.setContentDescription(tab);
-            b.setGravity(Gravity.CENTER); b.setBackground(UiStyle.press(this, active ? soft : surface, 14, accent)); b.setOnClickListener(v -> { if (activeScroll != null) activeScroll.scrollTo(0, 0); savedScrollY = 0; page = tab; render(); });
-            LinearLayout.LayoutParams navItem = new LinearLayout.LayoutParams(0, dp(48), 1); navItem.setMargins(dp(2), 0, dp(2), 0); nav.addView(b, navItem);
+        body = column();
+        if (list) homeListPage(shell);
+        else {
+            body.setPadding(dp(calendar ? 4 : 16), dp(8), dp(calendar ? 4 : 16), dp(calendar ? 0 : 12));
+            ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true); scroll.setClipToPadding(false); activeScroll = scroll;
+            scroll.setOnScrollChangeListener((v, x, y, oldX, oldY) -> savedScrollY = y);
+            if (calendar) shell.addView(body, new LinearLayout.LayoutParams(-1, 0, 1));
+            else { scroll.addView(body); shell.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1)); scroll.post(() -> scroll.scrollTo(0, savedScrollY)); }
+            if (page.equals("复盘")) reviewPage(); else if (calendar) { statisticsHeader(); calendarPage(); } else if (page.equals("统计")) statsPage(); else if (page.equals("回收站")) trashPage(); else settingsPage();
         }
-        shell.addView(nav, new LinearLayout.LayoutParams(-1, dp(56)));
+        BottomNavigationView nav = new BottomNavigationView(this);
+        nav.setBackgroundColor(surface);
+        ColorStateList navTint = new ColorStateList(new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}}, new int[]{accent, muted});
+        nav.setItemIconTintList(navTint); nav.setItemTextColor(navTint);
+        nav.setItemActiveIndicatorColor(ColorStateList.valueOf(soft));
+        nav.setLabelVisibilityMode(NavigationBarView.LABEL_VISIBILITY_LABELED);
+        String[] tabs = {"清单", "复盘", "统计", "设置"};
+        String[] icons = {"list", "review", "stats", "settings"};
+        for (int i = 0; i < tabs.length; i++) nav.getMenu().add(0, i, i, tabs[i]).setIcon(UiStyle.icon(this, icons[i], muted, 24));
+        nav.setSelectedItemId(Math.max(0, page.equals("回收站") ? 3 : Arrays.asList(tabs).indexOf(page)));
+        nav.setOnItemSelectedListener(item -> {
+            String tab = tabs[item.getItemId()];
+            if (tab.equals(page)) return true;
+            savedScrollY = 0; page = tab; fadeIn = true; render(); return true;
+        });
+        navView = nav;
+        shell.addView(nav, new LinearLayout.LayoutParams(-1, -2));
         if (list) {
-            ImageButton fab = new ImageButton(this); fab.setImageDrawable(UiStyle.icon(this, "plus", Color.WHITE, 28)); fab.setElevation(dp(3));
-            fab.setContentDescription("添加待办事项"); fab.setBackground(UiStyle.press(this, accent, 20, Color.WHITE)); fab.setOnClickListener(v -> editor(null));
-            FrameLayout.LayoutParams fp = new FrameLayout.LayoutParams(dp(58), dp(58), Gravity.END | Gravity.BOTTOM); fp.setMargins(0, 0, dp(22), dp(80)); root.addView(fab, fp);
+            FloatingActionButton fab = new FloatingActionButton(this);
+            fab.setImageDrawable(UiStyle.icon(this, "plus", Color.WHITE, 26));
+            fab.setImageTintList(ColorStateList.valueOf(Color.WHITE));
+            fab.setBackgroundTintList(ColorStateList.valueOf(accent));
+            fab.setContentDescription("添加待办事项"); fab.setOnClickListener(v -> editor(null));
+            FrameLayout.LayoutParams fp = new FrameLayout.LayoutParams(-2, -2, Gravity.END | Gravity.BOTTOM); fp.setMargins(0, 0, dp(22), dp(96)); root.addView(fab, fp);
         }
         if (page.equals("复盘")) {
             ReviewPage review = activeReview;
             TextView write = button("写复盘", true, () -> review.open(LocalDate.now(), false));
             write.setCompoundDrawables(UiStyle.icon(this, "review", dark ? bg : Color.WHITE, 18), null, null, null); write.setCompoundDrawablePadding(dp(8));
             write.setElevation(dp(2));
-            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-2, dp(48), Gravity.END | Gravity.BOTTOM); params.setMargins(0, 0, dp(20), dp(76)); root.addView(write, params);
+            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-2, dp(48), Gravity.END | Gravity.BOTTOM); params.setMargins(0, 0, dp(20), dp(92)); root.addView(write, params);
             review.modeChanged = () -> {
                 reviewDetail = review.isDetail(); reviewReading = review.isReading();
                 write.setVisibility(reviewDetail ? View.GONE : View.VISIBLE);
@@ -191,6 +221,7 @@ public class MainActivity extends Activity {
             write.setVisibility(review.isDetail() ? View.GONE : View.VISIBLE);
         }
         setContentView(root); root.requestApplyInsets(); updateReviewBack();
+        if (fadeIn) { fadeIn = false; root.setAlpha(0f); root.animate().alpha(1f).setDuration(160).start(); }
     }
     private TextView homeAction(String label, Runnable action) {
         TextView view = button(label, false, action);
@@ -199,8 +230,28 @@ public class MainActivity extends Activity {
         background.setStroke(dp(1), border); view.setBackground(background);
         return view;
     }
-    private void homePage() {
-        body.setBackgroundColor(bg);
+    private void homeListPage(LinearLayout shell) {
+        TaskAdapter.Listener listener = new TaskAdapter.Listener() {
+            @Override public void onToggle(Task t) { toggle(t); }
+            @Override public void onOpen(Task t) { editor(t); }
+            @Override public void onMore(Task t) { actions(t); }
+            @Override public void onSwipeComplete(Task t) {
+                if (root != null) root.performHapticFeedback(Build.VERSION.SDK_INT >= 30 ? HapticFeedbackConstants.CONFIRM : HapticFeedbackConstants.VIRTUAL_KEY);
+                toggle(t);
+            }
+            @Override public void onSwipeDelete(Task t) { delete(t); }
+        };
+        homeAdapter = new TaskAdapter(this, dark, surface, ink, muted, accent, soft, this::homeHeaderView, listener);
+        RecyclerView list = new RecyclerView(this);
+        list.setLayoutManager(new LinearLayoutManager(this));
+        list.setClipToPadding(false);
+        list.setAdapter(homeAdapter);
+        new ItemTouchHelper(new TaskAdapter.Swipe(homeAdapter, listener, this, dark, accent)).attachToRecyclerView(list);
+        homeAdapter.setData(tasks, selected);
+        shell.addView(list, new LinearLayout.LayoutParams(-1, 0, 1));
+    }
+    private View homeHeaderView() {
+        LinearLayout container = column(); container.setBackgroundColor(bg); container.setPadding(dp(16), dp(2), dp(16), 0);
         int todayBackground = getColor(dark ? R.color.calendar_today_background_dark : R.color.calendar_today_background);
         int circleSize = Math.max(dp(32), Math.min(dp(44), (getResources().getDisplayMetrics().widthPixels - dp(20)) / 7));
         LinearLayout header = row();
@@ -230,14 +281,14 @@ public class MainActivity extends Activity {
             widgetButton.setContentDescription("添加到桌面");
             header.addView(widgetButton, 1, new LinearLayout.LayoutParams(dp(104), dp(44)));
         }
-        body.addView(header);
+        container.addView(header);
 
         LinearLayout weekdays = row();
         for (String w : new String[]{"日", "一", "二", "三", "四", "五", "六"}) {
             TextView day = text(w, 12, muted, true); day.setGravity(Gravity.CENTER);
             weekdays.addView(day, new LinearLayout.LayoutParams(0, dp(28), 1));
         }
-        body.addView(weekdays);
+        container.addView(weekdays);
 
         if (homeCalendarExpanded) {
             CalendarPager pager = new CalendarPager(this, delta -> {
@@ -288,7 +339,7 @@ public class MainActivity extends Activity {
             }
             pager.addView(monthRows);
             }
-            body.addView(pager, new LinearLayout.LayoutParams(-1, dp(312)));
+            container.addView(pager, new LinearLayout.LayoutParams(-1, dp(312)));
         } else {
             LocalDate sunday = TaskDates.weekStartSunday(selected);
             LinearLayout week = row(); week.setGravity(Gravity.CENTER);
@@ -308,53 +359,9 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(circleSize, circleSize); p.setMargins(dp(1), dp(1), dp(1), dp(1));
                 week.addView(cell, p);
             }
-            body.addView(week);
+            container.addView(week);
         }
-        TextView completedHeader = text(selected.format(DateTimeFormatter.ofPattern("M月d日")) + " · 已完成", 16, ink, true);
-        completedHeader.setPadding(dp(8), dp(10), dp(8), dp(6)); body.addView(completedHeader);
-        if (body.getChildCount() > 0) body.removeViewAt(body.getChildCount() - 1);
-        List<Task> completed = MonthGrid.tasksOn(tasks, selected); int completedCount = 0;
-        for (Task t : completed) { addTask(body, t); completedCount++; }
-        if (completedCount == 0) { TextView empty = text("当天暂无完成记录", 13, muted, false); empty.setGravity(Gravity.CENTER); body.addView(empty, new LinearLayout.LayoutParams(-1, dp(54))); }
-        boolean historical = selected.isBefore(LocalDate.now());
-        TextView pendingHeader = text(historical ? "未完成" : "待办", 16, ink, true); pendingHeader.setPadding(dp(8), dp(12), dp(8), dp(6)); body.addView(pendingHeader);
-        int pending = 0;
-        for (Task t : tasks) if (TaskDates.visibleInDateList(t, selected) && t.completedAt == null) { addTask(body, t); pending++; }
-        if (pending == 0) { TextView empty = text(historical ? "没有未完成事项" : "暂无待办", 13, muted, false); empty.setGravity(Gravity.CENTER); body.addView(empty, new LinearLayout.LayoutParams(-1, dp(54))); }
-        space(body, 84);
-    }
-    private LinearLayout listControls() {
-        LinearLayout controls = column(); controls.setPadding(dp(16), dp(4), dp(16), dp(6));
-        LinearLayout line = row();
-        LinearLayout filters = row();
-        for (String name : new String[]{"全部", "待完成", "已完成"}) {
-            TextView b = text(name, 14, filter.equals(name) ? accent : muted, filter.equals(name));
-            b.setGravity(Gravity.CENTER); b.setBackground(box(filter.equals(name) ? soft : bg, 8));
-            b.setOnClickListener(v -> { filter = name; render(); });
-            filters.addView(b, new LinearLayout.LayoutParams(0, dp(44), 1));
-        }
-        line.addView(filters, new LinearLayout.LayoutParams(0, -2, 1));
-        TextView add = homeAction("＋  记下一件事", () -> editor(null));
-        boolean wrap = getResources().getConfiguration().screenWidthDp < 360 || getResources().getConfiguration().fontScale > 1.2f;
-        if (wrap) {
-            controls.addView(line); space(controls, 4); controls.addView(add);
-        } else {
-            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-2, -2); p.setMargins(dp(10), 0, 0, 0);
-            line.addView(add, p); controls.addView(line);
-        }
-        return controls;
-    }
-    private void listPage() {
-        int count = 0;
-        for (Task t : tasks) {
-            if (!TaskDates.visibleInTodayList(t, LocalDate.now())) continue;
-            if ((filter.equals("待完成") && t.completedAt != null) || (filter.equals("已完成") && t.completedAt == null)) continue;
-            addTask(body, t); count++;
-        }
-        if (count == 0) {
-            TextView empty = text(filter.equals("已完成") ? "暂无已完成事项" : filter.equals("待完成") ? "暂无待完成事项" : "暂无事项", 13, muted, false);
-            empty.setGravity(Gravity.CENTER); body.addView(empty, new LinearLayout.LayoutParams(-1, dp(64)));
-        }
+        return container;
     }
     private void empty(LinearLayout parent, String title, String subtitle) {
         LinearLayout c = card(); TextView icon = text("✓", 42, accent, false); icon.setGravity(Gravity.CENTER); c.addView(icon); space(c, 14);
@@ -362,47 +369,7 @@ public class MainActivity extends Activity {
         TextView sub = text(subtitle, 13, muted, false); sub.setGravity(Gravity.CENTER); c.addView(sub); parent.addView(c);
     }
     private String dateTime(long time) { return Instant.ofEpochMilli(time).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("M月d日 HH:mm")); }
-    private void addTask(LinearLayout parent, Task t) {
-        boolean compact = page.equals("清单") || page.equals("月历");
-        LinearLayout c = row(); c.setPadding(dp(6), dp(compact ? 8 : 14), dp(6), dp(compact ? 8 : 14)); c.setBackground(UiStyle.press(this, surface, 14, accent));
-        ImageButton check = new ImageButton(this); check.setImageDrawable(UiStyle.icon(this, t.completedAt == null ? "circle" : "check", t.completedAt == null ? muted : accent, 24)); check.setBackground(UiStyle.press(this, Color.TRANSPARENT, 22, accent)); check.setContentDescription(t.completedAt == null ? "完成：" + t.title : "恢复待办：" + t.title);
-        c.addView(check, new LinearLayout.LayoutParams(dp(44), dp(compact ? 48 : 52))); check.setOnClickListener(v -> toggle(t));
-        LinearLayout content = column(); TextView title = text(t.title, 16, t.completedAt == null ? ink : muted, !compact); title.setMaxLines(3); title.setEllipsize(TextUtils.TruncateAt.END);
-        if (t.completedAt != null) title.setPaintFlags(title.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG); content.addView(title); space(content, compact ? 2 : 6);
-        String detail = (t.tag.isEmpty() ? "未分类" : t.tag) + "  ·  " + new String[]{"低优先级", "中优先级", "高优先级"}[t.priority];
-        TextView meta = text(detail, 11, t.priority == 2 ? color(dark ? "#F4A39B" : "#BC6053") : t.priority == 1 ? color(dark ? "#E4C48A" : "#9A7A36") : muted, false); content.addView(meta);
-        String timing = t.estimatedMinutes == null ? "" : "预计 " + TaskDates.durationLabel(t.estimatedMinutes);
-        if (t.reminderAt != null) {
-            LocalDate taskDay = TaskDates.date(t.taskDate == null ? t.createdAt : t.taskDate);
-            String reminder = TaskDates.date(t.reminderAt).equals(taskDay)
-                ? Instant.ofEpochMilli(t.reminderAt).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm")) : dateTime(t.reminderAt);
-            timing += (timing.isEmpty() ? "" : " · ") + "提醒 " + reminder;
-        }
-        if (!timing.isEmpty()) { space(content, 4); content.addView(text(timing, 12, muted, false)); }
-        c.addView(content, new LinearLayout.LayoutParams(0, -2, 1));
-        ImageButton edit = new ImageButton(this); edit.setImageDrawable(UiStyle.icon(this, "more", muted, 22)); edit.setBackground(UiStyle.press(this, Color.TRANSPARENT, 22, accent)); edit.setContentDescription("编辑或删除：" + t.title); edit.setOnClickListener(v -> actions(t)); c.addView(edit, new LinearLayout.LayoutParams(dp(44), dp(48)));
-        c.setOnClickListener(v -> editor(t)); c.setOnLongClickListener(v -> { actions(t); return true; });
-        c.setOnTouchListener(new View.OnTouchListener() {
-            float x, y; boolean moved;
-            @Override public boolean onTouch(View v, android.view.MotionEvent e) {
-                switch (e.getActionMasked()) {
-                    case MotionEvent.ACTION_DOWN: x = e.getX(); y = e.getY(); moved = false; break;
-                    case MotionEvent.ACTION_MOVE:
-                        float delta = e.getX() - x;
-                        if (Math.abs(delta) > dp(24) && Math.abs(delta) > Math.abs(e.getY() - y) * 1.5f) { moved = true; v.getParent().requestDisallowInterceptTouchEvent(true); v.setTranslationX(delta * .4f); }
-                        break;
-                    case MotionEvent.ACTION_UP:
-                        v.setTranslationX(0); v.getParent().requestDisallowInterceptTouchEvent(false);
-                        if (moved) { if (e.getX() - x < -dp(72)) delete(t); else if (e.getX() - x > dp(72) && t.completedAt == null) toggle(t); return true; }
-                        break;
-                    case MotionEvent.ACTION_CANCEL: v.setTranslationX(0); break;
-                }
-                return false;
-            }
-        });
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2); p.setMargins(0, 0, 0, dp(compact ? 6 : 10)); parent.addView(c, p);
-    }
-    private void actions(Task t) { new AlertDialog.Builder(this).setTitle(t.title).setItems(new String[]{"编辑事项", t.completedAt == null ? "标记完成" : "恢复为待办", "删除事项"}, (d, n) -> { if (n == 0) editor(t); else if (n == 1) toggle(t); else delete(t); }).show(); }
+    private void actions(Task t) { new MaterialAlertDialogBuilder(this).setTitle(t.title).setItems(new String[]{"编辑事项", t.completedAt == null ? "标记完成" : "恢复为待办", "删除事项"}, (d, n) -> { if (n == 0) editor(t); else if (n == 1) toggle(t); else delete(t); }).show(); }
     private void toggle(Task t) { Task next = t.copy(); next.completedAt = t.completedAt == null ? System.currentTimeMillis() : null; save(next); }
     private void save(Task t) {
         TodoDb.IO.execute(() -> {
@@ -411,7 +378,26 @@ public class MainActivity extends Activity {
         });
     }
     private void delete(Task t) {
-        TodoDb.IO.execute(() -> { TodoDb.get(this).tasks().moveToTrash(t.id, System.currentTimeMillis()); Reminders.cancel(this, t); TodoWidget.updateAll(this); main.post(this::reload); });
+        TodoDb.IO.execute(() -> {
+            TodoDb.get(this).tasks().moveToTrash(t.id, System.currentTimeMillis()); Reminders.cancel(this, t); TodoWidget.updateAll(this);
+            main.post(() -> {
+                if (isDestroyed() || root == null) { reload(); return; }
+                reload();
+                String title = t.title.length() > 12 ? t.title.substring(0, 12) + "…" : t.title;
+                Snackbar undo = Snackbar.make(root, "已删除「" + title + "」", Snackbar.LENGTH_LONG).setAction("撤销", v -> undoDelete(t));
+                if (navView != null) undo.setAnchorView(navView);
+                undo.show();
+            });
+        });
+    }
+    private void undoDelete(Task t) {
+        TodoDb.IO.execute(() -> {
+            TodoDb.get(this).tasks().restore(t.id);
+            Task current = TodoDb.get(this).tasks().find(t.id);
+            if (current != null) Reminders.schedule(this, current);
+            TodoWidget.updateAll(this);
+            main.post(this::reload);
+        });
     }
     private TextView timeField(LinearLayout form, String label, TextView clear) {
         LinearLayout line = row();
@@ -477,7 +463,7 @@ public class MainActivity extends Activity {
             hours.setContentDescription("预计耗时小时"); minutes.setContentDescription("预计耗时分钟");
             pickers.addView(hours, new LinearLayout.LayoutParams(0, -2, 1)); pickers.addView(text("小时", 13, muted, false));
             pickers.addView(minutes, new LinearLayout.LayoutParams(0, -2, 1)); pickers.addView(text("分钟", 13, muted, false));
-            AlertDialog picker = new AlertDialog.Builder(this).setTitle("预计耗时").setView(pickers).setNegativeButton("取消", null).setPositiveButton("确定", null).create();
+            AlertDialog picker = new MaterialAlertDialogBuilder(this).setTitle("预计耗时").setView(pickers).setNegativeButton("取消", null).setPositiveButton("确定", null).create();
             picker.setOnShowListener(dialog -> picker.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(button -> {
                 pickers.clearFocus(); int value = hours.getValue() * 60 + minutes.getValue();
                 if (value == 0) { toast("预计耗时至少为 1 分钟"); return; }
@@ -493,7 +479,7 @@ public class MainActivity extends Activity {
                 time.setIs24HourView(true);
                 time.setHour(initial.getHour());
                 time.setMinute(initial.getMinute());
-                new AlertDialog.Builder(this).setTitle("提醒时间").setView(time)
+                new MaterialAlertDialogBuilder(this).setTitle("提醒时间").setView(time)
                     .setNegativeButton("取消", null)
                     .setPositiveButton("确定", (dialog, which) -> {
                         time.clearFocus();
@@ -504,7 +490,7 @@ public class MainActivity extends Activity {
         });
         space(form, 12); form.addView(text("按你设置的时间提醒；预计耗时与提醒时间可以分别设置。", 12, muted, false));
         ScrollView sc = new ScrollView(this); sc.addView(form);
-        AlertDialog dialog = new AlertDialog.Builder(this).setTitle(original == null ? "记下一件事" : "编辑事项").setView(sc).setNegativeButton("取消", null).setPositiveButton("保存", null).create();
+        AlertDialog dialog = new MaterialAlertDialogBuilder(this).setTitle(original == null ? "记下一件事" : "编辑事项").setView(sc).setNegativeButton("取消", null).setPositiveButton("保存", null).create();
         dialog.setOnShowListener(v -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(b -> {
             if (title.getText().toString().trim().isEmpty()) { title.setError("先写一点内容吧"); return; }
             if (draft.reminderAt != null && draft.reminderAt <= System.currentTimeMillis() && (original == null || !Objects.equals(original.reminderAt, draft.reminderAt))) { toast("提醒时间需要晚于现在"); return; }
@@ -548,7 +534,7 @@ public class MainActivity extends Activity {
     }
     private void dayDetails(LocalDate date) {
         List<Task> completed = MonthGrid.tasksOn(tasks, date);
-        AlertDialog.Builder dialog = new AlertDialog.Builder(this).setTitle(daySummary(date)).setNegativeButton("关闭", null);
+        AlertDialog.Builder dialog = new MaterialAlertDialogBuilder(this).setTitle(daySummary(date)).setNegativeButton("关闭", null);
         if (completed.isEmpty()) dialog.setMessage("当天暂无完成记录");
         else {
             String[] titles = new String[completed.size()];
@@ -657,7 +643,7 @@ public class MainActivity extends Activity {
         LinearLayout preferences = settingsGroup();
         LinearLayout themeRow = row();
         TextView themeLabel = settingsLabel("深色模式", "moon"); themeRow.addView(themeLabel, new LinearLayout.LayoutParams(0, dp(58), 1));
-        Switch theme = new Switch(this); theme.setContentDescription("深色模式"); theme.setChecked(dark);
+        MaterialSwitch theme = new MaterialSwitch(this); theme.setContentDescription("深色模式"); theme.setChecked(dark);
         int[][] states = {new int[]{android.R.attr.state_checked}, new int[]{}};
         theme.setThumbTintList(new ColorStateList(states, new int[]{accent, muted}));
         theme.setTrackTintList(new ColorStateList(states, new int[]{soft, border}));
@@ -698,7 +684,7 @@ public class MainActivity extends Activity {
         String[] choices = new String[]{"学习", "工作", "生活"};
         String current = getPreferences(MODE_PRIVATE).getString("defaultTag", "学习");
         int checked = Math.max(0, Arrays.asList(choices).indexOf(current));
-        new AlertDialog.Builder(this).setTitle("默认分类").setSingleChoiceItems(choices, checked, (dialog, which) -> {
+        new MaterialAlertDialogBuilder(this).setTitle("默认分类").setSingleChoiceItems(choices, checked, (dialog, which) -> {
             getPreferences(MODE_PRIVATE).edit().putString("defaultTag", choices[which]).apply(); dialog.dismiss(); render();
         }).show();
     }
@@ -741,7 +727,7 @@ public class MainActivity extends Activity {
             TextView restore = text("恢复", 13, accent, true); restore.setGravity(Gravity.CENTER); restore.setOnClickListener(v -> restoreTask(t));
             actions.addView(restore, new LinearLayout.LayoutParams(dp(64), dp(48)));
             TextView remove = text("彻底删除", 13, muted, false); remove.setGravity(Gravity.CENTER);
-            remove.setOnClickListener(v -> new AlertDialog.Builder(this).setTitle("彻底删除这条事项？")
+            remove.setOnClickListener(v -> new MaterialAlertDialogBuilder(this).setTitle("彻底删除这条事项？")
                 .setMessage(t.title + "\n删除后无法恢复。").setNegativeButton("取消", null)
                 .setPositiveButton("彻底删除", (d, w) -> {
                     TodoDb.IO.execute(() -> { Task current = TodoDb.get(this).tasks().find(t.id); if (current != null && current.deletedAt != null) TodoDb.get(this).tasks().delete(current); main.post(this::reload); });
@@ -761,7 +747,7 @@ public class MainActivity extends Activity {
         });
     }
     private void emptyTrash() {
-        new AlertDialog.Builder(this).setTitle("清空回收站？").setMessage("清空后所有删除事项将无法恢复。")
+        new MaterialAlertDialogBuilder(this).setTitle("清空回收站？").setMessage("清空后所有删除事项将无法恢复。")
             .setNegativeButton("取消", null).setPositiveButton("清空", (d, w) -> TodoDb.IO.execute(() -> {
                 TodoDb.get(this).tasks().emptyTrash();
                 main.post(this::reload);
@@ -772,7 +758,7 @@ public class MainActivity extends Activity {
         NumberPicker year = new NumberPicker(this); year.setMinValue(1); year.setMaxValue(9999); year.setValue(month.getYear());
         NumberPicker m = new NumberPicker(this); m.setMinValue(1); m.setMaxValue(12); m.setValue(month.getMonthValue());
         pickers.addView(year, new LinearLayout.LayoutParams(0, -2, 1)); pickers.addView(m, new LinearLayout.LayoutParams(0, -2, 1));
-        new AlertDialog.Builder(this).setTitle("选择导出的年份和月份").setView(pickers).setNegativeButton("取消", null)
+        new MaterialAlertDialogBuilder(this).setTitle("选择导出的年份和月份").setView(pickers).setNegativeButton("取消", null)
             .setPositiveButton("保存图片", (d, w) -> {
                 pickers.clearFocus(); pendingExportMonth = YearMonth.of(year.getValue(), m.getValue());
                 startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("image/png").addCategory(Intent.CATEGORY_OPENABLE)
@@ -783,7 +769,7 @@ public class MainActivity extends Activity {
         AppWidgetManager manager = AppWidgetManager.getInstance(this);
         try {
             if (!manager.isRequestPinAppWidgetSupported()) {
-                new AlertDialog.Builder(this).setTitle("当前桌面不支持一键添加")
+                new MaterialAlertDialogBuilder(this).setTitle("当前桌面不支持一键添加")
                     .setMessage("手机当前使用的桌面没有提供直接添加小组件的入口。可以更新系统桌面，或切换到支持此功能的桌面后再试。")
                     .setPositiveButton("知道了", null).show();
                 return;

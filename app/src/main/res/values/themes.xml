@@ -1,11 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="AppThemeLight" parent="android:style/Theme.Material.Light.NoActionBar">
+    <style name="AppThemeLight" parent="Theme.Material3.Light.NoActionBar">
         <item name="android:fontFamily">@font/book_font</item>
         <item name="android:colorAccent">#397557</item>
+        <item name="colorPrimary">#397557</item>
+        <item name="android:windowBackground">#F8FAF7</item>
     </style>
-    <style name="AppThemeDark" parent="android:style/Theme.Material.NoActionBar">
+    <style name="AppThemeDark" parent="Theme.Material3.Dark.NoActionBar">
         <item name="android:fontFamily">@font/book_font</item>
         <item name="android:colorAccent">#A4D7AD</item>
+        <item name="colorPrimary">#A4D7AD</item>
+        <item name="android:windowBackground">#141E19</item>
     </style>
 </resources>
