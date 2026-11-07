@@ -14,7 +14,11 @@ public final class TaskDates {
         }
         return n;
     }
-    public static long reminderAt(long due, long now) { return Math.max(now + 1000, due - 15 * 60 * 1000); }
+    public static LocalDate weekStartSunday(LocalDate selected) { return selected.minusDays(selected.getDayOfWeek().getValue() % 7); }
+    public static String durationLabel(int minutes) {
+        int hours = minutes / 60, remainder = minutes % 60;
+        return hours == 0 ? remainder + " 分钟" : hours + " 小时" + (remainder == 0 ? "" : " " + remainder + " 分钟");
+    }
     /** A completion rate uses one assigned-date cohort for both numerator and denominator. */
     public static int countAssigned(List<Task> tasks, LocalDate start, LocalDate endExclusive, boolean completedOnly) {
         int count = 0;

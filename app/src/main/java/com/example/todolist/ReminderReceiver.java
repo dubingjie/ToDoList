@@ -18,11 +18,12 @@ public class ReminderReceiver extends BroadcastReceiver {
                     return;
                 }
                 Task t = TodoDb.get(c).tasks().find(i.getLongExtra("id", -1));
-                if (t == null || t.deletedAt != null || t.completedAt != null || (t.startAt == null && t.dueAt == null)) return;
+                if (t == null || t.deletedAt != null || t.completedAt != null || t.reminderAt == null) return;
+                if (t.reminderAt > System.currentTimeMillis() + 1000) { Reminders.schedule(c, t); return; }
                 if (Build.VERSION.SDK_INT >= 33 && c.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return;
                 PendingIntent open = PendingIntent.getActivity(c, 0, new Intent(c, MainActivity.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-                long reminderAt = t.startAt != null ? t.startAt : t.dueAt;
-                String reminderLabel = t.startAt != null ? "开始时间 " : "截止时间 ";
+                long reminderAt = t.reminderAt;
+                String reminderLabel = "提醒时间 ";
                 Notification n = new Notification.Builder(c, Reminders.CHANNEL).setSmallIcon(R.drawable.ic_check).setContentTitle("待办提醒 · " + t.title)
                     .setContentText(reminderLabel + java.time.format.DateTimeFormatter.ofPattern("MM月d日 HH:mm").format(java.time.Instant.ofEpochMilli(reminderAt).atZone(java.time.ZoneId.systemDefault())))
                     .setContentIntent(open).setAutoCancel(true).build();

@@ -290,7 +290,7 @@ public class MainActivity extends Activity {
             }
             body.addView(pager, new LinearLayout.LayoutParams(-1, dp(312)));
         } else {
-            LocalDate sunday = LocalDate.now().minusDays(LocalDate.now().getDayOfWeek().getValue() % 7);
+            LocalDate sunday = TaskDates.weekStartSunday(selected);
             LinearLayout week = row(); week.setGravity(Gravity.CENTER);
             for (int i = 0; i < 7; i++) {
                 LocalDate date = sunday.plusDays(i);
@@ -371,7 +371,14 @@ public class MainActivity extends Activity {
         if (t.completedAt != null) title.setPaintFlags(title.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG); content.addView(title); space(content, compact ? 2 : 6);
         String detail = (t.tag.isEmpty() ? "未分类" : t.tag) + "  ·  " + new String[]{"低优先级", "中优先级", "高优先级"}[t.priority];
         TextView meta = text(detail, 11, t.priority == 2 ? color(dark ? "#F4A39B" : "#BC6053") : t.priority == 1 ? color(dark ? "#E4C48A" : "#9A7A36") : muted, false); content.addView(meta);
-        if (t.dueAt != null) { space(content, 5); content.addView(text((t.completedAt == null && t.dueAt < System.currentTimeMillis() ? "已逾期 · " : "截止 · ") + dateTime(t.dueAt), 11, muted, false)); }
+        String timing = t.estimatedMinutes == null ? "" : "预计 " + TaskDates.durationLabel(t.estimatedMinutes);
+        if (t.reminderAt != null) {
+            LocalDate taskDay = TaskDates.date(t.taskDate == null ? t.createdAt : t.taskDate);
+            String reminder = TaskDates.date(t.reminderAt).equals(taskDay)
+                ? Instant.ofEpochMilli(t.reminderAt).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm")) : dateTime(t.reminderAt);
+            timing += (timing.isEmpty() ? "" : " · ") + "提醒 " + reminder;
+        }
+        if (!timing.isEmpty()) { space(content, 4); content.addView(text(timing, 12, muted, false)); }
         c.addView(content, new LinearLayout.LayoutParams(0, -2, 1));
         ImageButton edit = new ImageButton(this); edit.setImageDrawable(UiStyle.icon(this, "more", muted, 22)); edit.setBackground(UiStyle.press(this, Color.TRANSPARENT, 22, accent)); edit.setContentDescription("编辑或删除：" + t.title); edit.setOnClickListener(v -> actions(t)); c.addView(edit, new LinearLayout.LayoutParams(dp(44), dp(48)));
         c.setOnClickListener(v -> editor(t)); c.setOnLongClickListener(v -> { actions(t); return true; });
@@ -447,62 +454,62 @@ public class MainActivity extends Activity {
         AutoCompleteTextView tag = new AutoCompleteTextView(this); tag.setSingleLine(); tag.setText(draft.tag); tag.setHint("学习 / 工作 / 生活，也可以自定义"); tag.setFilters(new InputFilter[]{new InputFilter.LengthFilter(20)}); tag.setAdapter(UiStyle.choices(this, android.R.layout.simple_dropdown_item_1line, new String[]{"学习", "工作", "生活"})); tag.setThreshold(0); tag.setOnFocusChangeListener((v, focused) -> { if (focused) tag.showDropDown(); }); form.addView(tag);
         UiStyle.typography(tag, false);
         space(form, 18);
-        TextView clearStart = text("×", 22, muted, false);
-        TextView start = timeField(form, "开始时间", clearStart);
+        TextView clearDuration = text("×", 22, muted, false);
+        TextView duration = timeField(form, "预计耗时", clearDuration);
         space(form, 8);
-        TextView clearDue = text("×", 22, muted, false);
-        TextView due = timeField(form, "预计完成时间", clearDue);
+        TextView clearReminder = text("×", 22, muted, false);
+        TextView reminder = timeField(form, "提醒时间", clearReminder);
         Runnable refreshTimes = () -> {
-            start.setText(draft.startAt == null ? "未设置 · 点击选择" : dateTime(draft.startAt));
-            due.setText(draft.dueAt == null ? "未设置 · 点击选择" : dateTime(draft.dueAt));
-            clearStart.setVisibility(draft.startAt == null ? View.GONE : View.VISIBLE);
-            clearDue.setVisibility(draft.dueAt == null ? View.GONE : View.VISIBLE);
+            duration.setText(draft.estimatedMinutes == null ? "未设置 · 点击选择" : TaskDates.durationLabel(draft.estimatedMinutes));
+            reminder.setText(draft.reminderAt == null ? "不提醒 · 点击设置" : dateTime(draft.reminderAt));
+            clearDuration.setVisibility(draft.estimatedMinutes == null ? View.GONE : View.VISIBLE);
+            clearReminder.setVisibility(draft.reminderAt == null ? View.GONE : View.VISIBLE);
         };
-        clearStart.setOnClickListener(v -> { draft.startAt = null; refreshTimes.run(); });
-        clearDue.setOnClickListener(v -> { draft.dueAt = null; refreshTimes.run(); });
+        clearDuration.setOnClickListener(v -> { draft.estimatedMinutes = null; refreshTimes.run(); });
+        clearReminder.setOnClickListener(v -> { draft.reminderAt = null; refreshTimes.run(); });
         refreshTimes.run();
-        onTimeFieldClick(start, v -> {
-            ZonedDateTime current = draft.startAt == null ? ZonedDateTime.now().plusMinutes(15) : Instant.ofEpochMilli(draft.startAt).atZone(ZoneId.systemDefault());
+        onTimeFieldClick(duration, v -> {
+            LinearLayout pickers = row(); pickers.setPadding(dp(16), dp(8), dp(16), dp(8));
+            NumberPicker hours = new NumberPicker(this); hours.setMinValue(0); hours.setMaxValue(99); hours.setWrapSelectorWheel(false);
+            NumberPicker minutes = new NumberPicker(this); minutes.setMinValue(0); minutes.setMaxValue(59); minutes.setWrapSelectorWheel(false);
+            int current = draft.estimatedMinutes == null ? 30 : draft.estimatedMinutes;
+            hours.setValue(current / 60); minutes.setValue(current % 60);
+            hours.setContentDescription("预计耗时小时"); minutes.setContentDescription("预计耗时分钟");
+            pickers.addView(hours, new LinearLayout.LayoutParams(0, -2, 1)); pickers.addView(text("小时", 13, muted, false));
+            pickers.addView(minutes, new LinearLayout.LayoutParams(0, -2, 1)); pickers.addView(text("分钟", 13, muted, false));
+            AlertDialog picker = new AlertDialog.Builder(this).setTitle("预计耗时").setView(pickers).setNegativeButton("取消", null).setPositiveButton("确定", null).create();
+            picker.setOnShowListener(dialog -> picker.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(button -> {
+                pickers.clearFocus(); int value = hours.getValue() * 60 + minutes.getValue();
+                if (value == 0) { toast("预计耗时至少为 1 分钟"); return; }
+                draft.estimatedMinutes = value; refreshTimes.run(); picker.dismiss();
+            })); picker.show();
+        });
+        onTimeFieldClick(reminder, v -> {
+            ZonedDateTime current = draft.reminderAt == null ? taskDay.atTime(LocalTime.now()).atZone(ZoneId.systemDefault()) : Instant.ofEpochMilli(draft.reminderAt).atZone(ZoneId.systemDefault());
+            if (draft.reminderAt == null && !current.isAfter(ZonedDateTime.now())) current = ZonedDateTime.now().plusHours(1);
+            final ZonedDateTime initial = current;
             new DatePickerDialog(this, (picker, year, m, day) -> {
                 TimePicker time = (TimePicker) getLayoutInflater().inflate(R.layout.start_time_picker, null);
                 time.setIs24HourView(true);
-                time.setHour(current.getHour());
-                time.setMinute(current.getMinute());
-                new AlertDialog.Builder(this).setTitle("开始时间").setView(time)
+                time.setHour(initial.getHour());
+                time.setMinute(initial.getMinute());
+                new AlertDialog.Builder(this).setTitle("提醒时间").setView(time)
                     .setNegativeButton("取消", null)
                     .setPositiveButton("确定", (dialog, which) -> {
                         time.clearFocus();
-                        draft.startAt = LocalDateTime.of(year, m + 1, day, time.getHour(), time.getMinute()).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+                        draft.reminderAt = LocalDateTime.of(year, m + 1, day, time.getHour(), time.getMinute()).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
                         refreshTimes.run();
                     }).show();
-            }, current.getYear(), current.getMonthValue() - 1, current.getDayOfMonth()).show();
+            }, initial.getYear(), initial.getMonthValue() - 1, initial.getDayOfMonth()).show();
         });
-        onTimeFieldClick(due, v -> {
-            ZonedDateTime current = draft.dueAt == null ? ZonedDateTime.now().plusHours(1) : Instant.ofEpochMilli(draft.dueAt).atZone(ZoneId.systemDefault());
-            new DatePickerDialog(this, (picker, year, m, day) -> {
-                TimePicker time = (TimePicker) getLayoutInflater().inflate(R.layout.start_time_picker, null);
-                time.setIs24HourView(true);
-                time.setHour(current.getHour());
-                time.setMinute(current.getMinute());
-                new AlertDialog.Builder(this).setTitle("预计完成时间").setView(time)
-                    .setNegativeButton("取消", null)
-                    .setPositiveButton("确定", (dialog, which) -> {
-                        time.clearFocus();
-                        draft.dueAt = LocalDateTime.of(year, m + 1, day, time.getHour(), time.getMinute()).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
-                        refreshTimes.run();
-                    }).show();
-            }, current.getYear(), current.getMonthValue() - 1, current.getDayOfMonth()).show();
-        });
-        space(form, 12); form.addView(text("提前约 15 分钟提醒；系统省电可能使提醒延迟。", 11, muted, false));
+        space(form, 12); form.addView(text("按你设置的时间提醒；预计耗时与提醒时间可以分别设置。", 12, muted, false));
         ScrollView sc = new ScrollView(this); sc.addView(form);
         AlertDialog dialog = new AlertDialog.Builder(this).setTitle(original == null ? "记下一件事" : "编辑事项").setView(sc).setNegativeButton("取消", null).setPositiveButton("保存", null).create();
         dialog.setOnShowListener(v -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(b -> {
             if (title.getText().toString().trim().isEmpty()) { title.setError("先写一点内容吧"); return; }
-            if (draft.dueAt != null && draft.dueAt <= System.currentTimeMillis() && (original == null || !Objects.equals(original.dueAt, draft.dueAt))) { toast("截止时间需要晚于现在"); return; }
-            if (draft.startAt != null && draft.startAt <= System.currentTimeMillis() && (original == null || !Objects.equals(original.startAt, draft.startAt))) { toast("开始时间需要晚于现在"); return; }
-            if (draft.startAt != null && draft.dueAt != null && draft.startAt >= draft.dueAt) { toast("开始时间需要早于预计完成时间"); return; }
+            if (draft.reminderAt != null && draft.reminderAt <= System.currentTimeMillis() && (original == null || !Objects.equals(original.reminderAt, draft.reminderAt))) { toast("提醒时间需要晚于现在"); return; }
             draft.title = title.getText().toString().trim(); draft.tag = tag.getText().toString().trim(); draft.priority = priority.getSelectedItemPosition();
-            save(draft); dialog.dismiss(); if (draft.startAt != null || draft.dueAt != null) requestNotifications();
+            save(draft); dialog.dismiss(); if (draft.reminderAt != null) requestNotifications();
         })); dialog.show();
     }
     private void calendarPage() {
@@ -627,7 +634,7 @@ public class MainActivity extends Activity {
         theme.setOnCheckedChangeListener((b, on) -> { getPreferences(MODE_PRIVATE).edit().putBoolean("dark", on).apply(); recreate(); });
         body.addView(theme); settingDivider();
         boolean enabled = getSystemService(NotificationManager.class).areNotificationsEnabled();
-        settingRow("截止提醒", enabled ? "已开启" : "未开启", () -> {
+        settingRow("待办提醒", enabled ? "已开启" : "未开启", () -> {
             if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED && !getPreferences(MODE_PRIVATE).getBoolean("notificationRequested", false)) requestNotifications();
             else startActivity(new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, getPackageName()));
         });
@@ -660,7 +667,7 @@ public class MainActivity extends Activity {
         String defaultTag = getPreferences(MODE_PRIVATE).getString("defaultTag", "学习");
         settingRow(preferences, "默认分类", defaultTag, "tag", this::chooseDefaultTag); settingsLine(preferences);
         boolean enabled = getSystemService(NotificationManager.class).areNotificationsEnabled();
-        settingRow(preferences, "截止提醒", enabled ? "已开启" : "未开启", "bell", () -> {
+        settingRow(preferences, "待办提醒", enabled ? "已开启" : "未开启", "bell", () -> {
             if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED && !getPreferences(MODE_PRIVATE).getBoolean("notificationRequested", false)) requestNotifications();
             else startActivity(new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, getPackageName()));
         });

@@ -160,11 +160,12 @@ final class ReviewPage extends LinearLayout {
         if (type != 0) {
             LinearLayout targets = card(); LinearLayout header = row();
             header.addView(text(type == 1 ? "本周目标" : "本月目标", 15, ink, true), new LayoutParams(0, dp(40), 1));
+            if (goals.length() > 0) header.addView(text(goalProgress(), 12, muted, false));
             TextView edit = text("编辑", 13, accent, true); edit.setGravity(Gravity.CENTER); edit.setOnClickListener(v -> editGoals()); header.addView(edit, new LayoutParams(dp(48), dp(40))); targets.addView(header);
             if (goals.length() == 0) targets.addView(text("先定下 1～3 个重点目标", 12, muted, false));
             for (int i = 0; i < goals.length(); i++) {
                 JSONObject goal = goals.optJSONObject(i); if (goal == null) continue;
-                TextView title = text((goal.optInt("state") == 1 ? "✓ " : "· ") + goal.optString("title"), 13, ink, false); title.setMaxLines(2); title.setEllipsize(TextUtils.TruncateAt.END); targets.addView(title); gap(targets, 4);
+                addGoalTitle(targets, goal, false); gap(targets, 6);
             }
             addView(targets); gap(this, 18);
         }
@@ -177,7 +178,9 @@ final class ReviewPage extends LinearLayout {
             try { date = LocalDate.parse(note.id.substring(2)); } catch (RuntimeException e) { continue; }
             LinearLayout item = card();
             LinearLayout header = row(); header.addView(text(dateTitle(date), 15, ink, true), new LayoutParams(0, -2, 1));
-            if (!note.finished) { TextView draft = text("草稿", 11, accent, false); draft.setPadding(dp(8), dp(4), dp(8), dp(4)); draft.setBackground(background(soft, 8)); header.addView(draft); } item.addView(header); gap(item, 10);
+            if (!note.finished) { TextView draft = text("草稿", 11, accent, false); draft.setPadding(dp(8), dp(4), dp(8), dp(4)); draft.setBackground(background(soft, 8)); header.addView(draft); }
+            else { TextView completed = text("✓", 16, accent, true); completed.setGravity(Gravity.CENTER); completed.setContentDescription("已完成复盘"); header.addView(completed, new LayoutParams(dp(24), dp(24))); }
+            item.addView(header); gap(item, 10);
             TextView excerpt = text(summary.toString(), 13, muted, false); excerpt.setLineSpacing(dp(4), 1f); excerpt.setMaxLines(2); excerpt.setEllipsize(TextUtils.TruncateAt.END); item.addView(excerpt);
             item.setBackground(UiStyle.press(getContext(), surface, 18, accent));
             item.setContentDescription("查看复盘：" + dateTitle(date)); item.setOnClickListener(v -> open(date, note.finished));
@@ -189,13 +192,16 @@ final class ReviewPage extends LinearLayout {
     private void buildContent() {
         if (type != 0) {
             LinearLayout targetCard = card();
-            LinearLayout heading = row(); heading.addView(text(type == 1 ? "本周重点目标" : "本月重点目标", 16, ink, true), new LayoutParams(0, dp(48), 1));
+            LinearLayout heading = row(); LinearLayout titleGroup = new LinearLayout(getContext()); titleGroup.setOrientation(VERTICAL);
+            titleGroup.addView(text(type == 1 ? "本周重点目标" : "本月重点目标", 16, ink, true));
+            if (goals.length() > 0) titleGroup.addView(text(goalProgress(), 12, muted, false));
+            heading.addView(titleGroup, new LayoutParams(0, dp(48), 1));
             if (!reading) heading.addView(action("编辑目标", this::editGoals)); targetCard.addView(heading);
             if (goals.length() == 0) targetCard.addView(text("写下 1～3 个希望达到的结果，也可以直接复盘。", 13, muted, false));
             for (int i = 0; i < goals.length(); i++) {
                 JSONObject goal = goals.optJSONObject(i); if (goal == null) continue;
                 String[] labels = {"进行中", "已达成", "未达成"}; int state = Math.max(0, Math.min(2, goal.optInt("state")));
-                TextView title = text((i + 1) + ". " + goal.optString("title"), 15, ink, true); targetCard.addView(title); gap(targetCard, 4);
+                addGoalTitle(targetCard, goal, true); gap(targetCard, 4);
                 String approach = goal.optString("approach"); if (!approach.isEmpty()) { targetCard.addView(text(approach, 12, muted, false)); gap(targetCard, 4); }
                 targetCard.addView(text(labels[state], 12, state == 1 ? accent : muted, false)); gap(targetCard, 10);
             }
@@ -248,6 +254,21 @@ final class ReviewPage extends LinearLayout {
             if (!hasContent) { Toast.makeText(getContext(), "先写一点复盘内容吧", Toast.LENGTH_SHORT).show(); return; }
             record.finished = true; dirty = true; persist(); showList();
         }));
+    }
+    private String goalProgress() {
+        int done = 0; for (int i = 0; i < goals.length(); i++) { JSONObject goal = goals.optJSONObject(i); if (goal != null && goal.optInt("state") == 1) done++; }
+        return "已达成 " + done + "/" + goals.length();
+    }
+    private void addGoalTitle(LinearLayout parent, JSONObject goal, boolean bold) {
+        int state = Math.max(0, Math.min(2, goal.optInt("state")));
+        boolean dark = (surface & 0xffffff) != 0xffffff;
+        int tint = state == 1 ? soft : android.graphics.Color.parseColor(dark ? (state == 0 ? "#2D3C49" : "#343C35") : (state == 0 ? "#EDF1F7" : "#EFF0EB"));
+        LinearLayout line = row(); TextView marker = text(state == 1 ? "✓" : state == 0 ? "•" : "—", 12, state == 1 ? accent : muted, true);
+        marker.setGravity(Gravity.CENTER); marker.setBackground(background(tint, 7));
+        marker.setContentDescription(new String[]{"进行中", "已达成", "未达成"}[state]);
+        line.addView(marker, new LayoutParams(dp(22), dp(22)));
+        TextView title = text(goal.optString("title"), bold ? 15 : 13, ink, bold); title.setMaxLines(2); title.setEllipsize(TextUtils.TruncateAt.END);
+        LayoutParams params = new LayoutParams(0, -2, 1); params.leftMargin = dp(8); line.addView(title, params); parent.addView(line);
     }
     private void changed() {
         dirty = true; if (status != null) status.setText("正在保存…");

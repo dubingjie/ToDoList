@@ -7,7 +7,7 @@ import android.net.Uri;
 public final class Reminders {
     public static final String CHANNEL = "task_due";
     public static void channel(Context c) {
-        c.getSystemService(NotificationManager.class).createNotificationChannel(new NotificationChannel(CHANNEL, "截止时间提醒", NotificationManager.IMPORTANCE_DEFAULT));
+        c.getSystemService(NotificationManager.class).createNotificationChannel(new NotificationChannel(CHANNEL, "待办提醒", NotificationManager.IMPORTANCE_DEFAULT));
     }
     public static void schedule(Context c, Task t) {
         Intent i = new Intent(c, ReminderReceiver.class).setAction("REMIND").setData(Uri.parse("todo://reminder/" + t.id)).putExtra("id", t.id);
@@ -16,7 +16,7 @@ public final class Reminders {
         alarms.cancel(p);
         c.getSystemService(NotificationManager.class).cancel("task-" + t.id, 1);
         long now = System.currentTimeMillis();
-        long trigger = t.startAt != null ? t.startAt : (t.dueAt == null ? 0 : TaskDates.reminderAt(t.dueAt, now));
+        long trigger = t.reminderAt == null ? 0 : t.reminderAt;
         if (t.deletedAt == null && t.completedAt == null && trigger > now) {
             alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger, p);
         }

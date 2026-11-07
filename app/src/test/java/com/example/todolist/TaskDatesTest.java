@@ -6,6 +6,20 @@ import java.util.*;
 import static org.junit.Assert.*;
 
 public class TaskDatesTest {
+    @Test public void foldedCalendarKeepsTheSelectedWeekAcrossMonthBoundaries() {
+        LocalDate selected = LocalDate.of(2026, 9, 30);
+        assertEquals(LocalDate.of(2026, 9, 27), TaskDates.weekStartSunday(selected));
+        assertEquals(selected, TaskDates.weekStartSunday(selected).plusDays(3));
+        assertEquals(LocalDate.of(2026, 10, 4), TaskDates.weekStartSunday(LocalDate.of(2026, 10, 4)));
+    }
+    @Test public void durationIsIndependentFromReminderAndPreservedInCopies() {
+        assertEquals("30 分钟", TaskDates.durationLabel(30));
+        assertEquals("1 小时", TaskDates.durationLabel(60));
+        assertEquals("1 小时 30 分钟", TaskDates.durationLabel(90));
+        Task task = new Task(); task.estimatedMinutes = 90; task.reminderAt = 123456L;
+        Task copied = task.copy(); task.estimatedMinutes = null; task.reminderAt = null;
+        assertEquals(Integer.valueOf(90), copied.estimatedMinutes); assertEquals(Long.valueOf(123456), copied.reminderAt);
+    }
     @Test public void weeklyRateUsesAssignedDatesForBothCounts() {
         LocalDate start = LocalDate.of(2026, 10, 5), end = start.plusWeeks(1);
         Task assigned = completed(end.plusDays(1));
@@ -36,11 +50,6 @@ public class TaskDatesTest {
         assertEquals(1, TaskDates.count(Collections.singletonList(t), date, date.plusDays(1)));
         t.completedAt = null;
         assertEquals(0, TaskDates.count(Collections.singletonList(t), date, date.plusDays(1)));
-    }
-    @Test public void remindersAreFifteenMinutesEarlyUnlessDeadlineIsClose() {
-        long now = 100000000L;
-        assertEquals(now + 45 * 60 * 1000, TaskDates.reminderAt(now + 60 * 60 * 1000, now));
-        assertEquals(now + 1000, TaskDates.reminderAt(now + 5 * 60 * 1000, now));
     }
     @Test public void taskCopyPreservesUndoSnapshot() {
         Task t = new Task(); t.id = 9; t.title = "完成文档"; t.dueAt = 1234L;

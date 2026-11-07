@@ -14,7 +14,7 @@ public class ReviewTestRunner extends Instrumentation {
     @Override public void onStart() {
         Bundle result = new Bundle();
         try {
-            database(); monthCapacity(); widgetCapacity(); navigation(); widgetClickChecks(); taskEditing(); autosave();
+            database(); monthCapacity(); widgetCapacity(); navigation(); widgetClickChecks(); taskEditing(); goalMarkers(); autosave();
             result.putString("stream", "\nPASS: " + checks + " review checks (migration, persistence, period isolation, navigation).\n"); finish(Activity.RESULT_OK, result);
         } catch (Throwable e) { result.putString("stream", "\nFAIL: " + android.util.Log.getStackTraceString(e)); finish(Activity.RESULT_CANCELED, result); }
     }
@@ -24,14 +24,20 @@ public class ReviewTestRunner extends Instrumentation {
         context.deleteDatabase(name);
         android.database.sqlite.SQLiteDatabase old = context.openOrCreateDatabase(name, 0, null);
         old.execSQL("CREATE TABLE tasks (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, title TEXT, tag TEXT, priority INTEGER NOT NULL, createdAt INTEGER NOT NULL, dueAt INTEGER, startAt INTEGER, taskDate INTEGER, completedAt INTEGER, deletedAt INTEGER)");
-        old.execSQL("INSERT INTO tasks VALUES (1, 'preserved', 'work', 2, 1000, NULL, NULL, 1000, NULL, NULL)");
+        old.execSQL("INSERT INTO tasks VALUES (1, 'preserved', 'work', 2, 1000, 4000000, 2000000, 1000, NULL, NULL)");
+        old.execSQL("INSERT INTO tasks VALUES (2, 'legacy deadline', 'work', 1, 1000, 4000000, NULL, 1000, NULL, NULL)");
+        old.execSQL("INSERT INTO tasks VALUES (3, 'no reminder', 'work', 1, 1000, NULL, NULL, 1000, NULL, NULL)");
         old.setVersion(4); old.close();
-        TodoDb db = Room.databaseBuilder(context, TodoDb.class, name).addMigrations(TodoDb.MIGRATION_4_5).build();
+        TodoDb db = Room.databaseBuilder(context, TodoDb.class, name).addMigrations(TodoDb.MIGRATION_4_5, TodoDb.MIGRATION_5_6).build();
         try {
             check("preserved".equals(db.tasks().find(1).title), "Upgrade must preserve tasks");
+            check(db.tasks().find(1).reminderAt == 2000000L && db.tasks().find(1).estimatedMinutes == null, "Migration preserves start reminder and never guesses duration");
+            check(db.tasks().find(2).reminderAt == 3100000L && db.tasks().find(3).reminderAt == null, "Migration preserves old deadline offset and disabled reminders");
+            Task timing = db.tasks().find(1); timing.estimatedMinutes = 90; timing.reminderAt = 9000000L; db.tasks().save(timing);
             ReviewRecord record = new ReviewRecord(); record.id = "1:2026-09-28"; record.goals = "[{\"title\":\"practice\",\"state\":1}]"; record.answers = "[\"reflection\"]";
             db.reviews().save(record); db.close();
             db = Room.databaseBuilder(context, TodoDb.class, name).build();
+            check(db.tasks().find(1).estimatedMinutes == 90 && db.tasks().find(1).reminderAt == 9000000L, "Independent duration and exact reminder timestamp survive reopening");
             ReviewRecord saved = db.reviews().find(record.id);
             check(saved != null && saved.answers.equals(record.answers) && saved.goals.equals(record.goals), "Draft and goals must survive reopening");
             saved.finished = true; db.reviews().save(saved);
@@ -68,6 +74,8 @@ public class ReviewTestRunner extends Instrumentation {
             android.widget.TextView more = (android.widget.TextView) busy.getChildAt(busy.getChildCount() - 1);
             check(more.getText().toString().matches("＋[1-6]件") && more.getBottom() <= busy.getHeight(), "Actual overflow shows a clear count inside the cell");
             check(more.getWidth() > 0 && more.getHeight() > 0, "Overflow label must have visible dimensions: " + more.getWidth() + "x" + more.getHeight());
+            android.view.View lastTask = busy.getChildAt(busy.getChildCount() - 2);
+            check(more.getTop() - lastTask.getBottom() <= UiStyle.dp(context, 2), "Overflow count follows the last task without a stretched blank gap");
             android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888);
             grid.draw(new android.graphics.Canvas(bitmap));
             try (java.io.FileOutputStream output = new java.io.FileOutputStream(new java.io.File(context.getExternalFilesDir(null), "month-capacity-check.png"))) {
@@ -204,7 +212,32 @@ public class ReviewTestRunner extends Instrumentation {
             } catch (Exception e) { throw new RuntimeException(e); }
         });
         check(await("编辑事项") != null && task.completedAt == null, "Task row opens editor without completing");
+        check(await("预计耗时") != null && await("提醒时间") != null, "Editor exposes independent duration and reminder fields");
+        AccessibilityNodeInfo root = getUiAutomation().getRootInActiveWindow();
+        check(root.findAccessibilityNodeInfosByText("开始时间").isEmpty() && root.findAccessibilityNodeInfosByText("预计完成时间").isEmpty(), "Old timing fields are removed from editor");
+        click("预计耗时"); click("确定");
+        check(await("30 分钟") != null, "Duration wheel selection updates the editor");
         click("取消");
+    }
+    private void goalMarkers() throws Exception {
+        java.time.LocalDate date = java.time.LocalDate.of(2099, 12, 30); String key = ReviewPeriod.key(1, date);
+        TodoDb db = TodoDb.get(getTargetContext()); ReviewRecord original = TodoDb.IO.submit(() -> db.reviews().find(key)).get();
+        ReviewRecord sample = new ReviewRecord(); sample.id = key;
+        sample.goals = "[{\"title\":\"目标一\",\"state\":0},{\"title\":\"目标二\",\"state\":1},{\"title\":\"目标三\",\"state\":2}]";
+        TodoDb.IO.submit(() -> db.reviews().save(sample)).get(); ReviewPage[] view = new ReviewPage[1];
+        try {
+            runOnMainSync(() -> {
+                view[0] = new ReviewPage(activity, java.util.Collections.emptyList(), 1, date, 0xFF283C31, 0xFF627369, 0xFF397557, 0xFFEAF2E9, 0xFFFFFFFF, (t, d) -> {});
+                activity.setContentView(view[0]);
+            });
+            check(await("已达成 1/3") != null, "Goal list shows achieved count");
+            runOnMainSync(() -> check(described(view[0], "进行中") != null && described(view[0], "已达成") != null && described(view[0], "未达成") != null, "Goal states have distinct accessible markers"));
+            runOnMainSync(() -> view[0].open(date, false));
+            check(await("已达成 1/3") != null, "Goal progress also appears when writing reflection");
+        } finally {
+            runOnMainSync(() -> activity.setContentView(new android.view.View(activity)));
+            TodoDb.IO.submit(() -> { if (original != null) db.reviews().save(original); else db.getOpenHelper().getWritableDatabase().execSQL("DELETE FROM reviews WHERE id = ?", new Object[]{key}); }).get();
+        }
     }
     private android.view.View described(android.view.View view, String label) {
         if (label.contentEquals(view.getContentDescription() == null ? "" : view.getContentDescription())) return view;
@@ -241,6 +274,8 @@ public class ReviewTestRunner extends Instrumentation {
             runOnMainSync(() -> completionButton(page[0]).performClick());
             check(TodoDb.IO.submit(() -> db.reviews().find(key)).get().finished, "Completion button must save completed status");
             check(!page[0].isDetail(), "Completing reflection must return to notes list");
+            await("device draft check");
+            runOnMainSync(() -> check(described(page[0], "已完成复盘") != null, "Finished note gets a small completion check"));
             runOnMainSync(() -> page[0].open(date, true));
             await("复盘内容");
             check(firstAnswer(page[0]) == null, "Completed record opens in reading mode");
@@ -251,7 +286,10 @@ public class ReviewTestRunner extends Instrumentation {
             });
             ReviewRecord edited = TodoDb.IO.submit(() -> db.reviews().find(key)).get();
             check(edited.answers.contains("edited immediately before leaving") && !edited.finished, "Leaving must flush edits before debounce fires");
-            runOnMainSync(() -> { activity.setContentView(page[0]); page[0].open(date, false); });
+            runOnMainSync(() -> { activity.setContentView(page[0]); page[0].showList(); });
+            await("edited immediately before leaving");
+            check(await("草稿") != null, "Editing a finished reflection returns its list marker to draft");
+            runOnMainSync(() -> page[0].open(date, false));
             await("收获与想法");
             runOnMainSync(() -> described(page[0], "复盘更多操作").performClick());
             click("删除这篇复盘"); click("取消");

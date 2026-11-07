@@ -102,7 +102,6 @@ public final class MonthGrid extends ViewGroup {
                 title.setOnClickListener(v -> choose(date, true));
                 LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, item - gap); p.bottomMargin = gap; addView(title, p);
             }
-            View spacer = new View(getContext()); addView(spacer, new LinearLayout.LayoutParams(1, 0, 1));
             if (shown < tasks.size()) {
                 TextView plus = label("＋" + (tasks.size() - shown) + "件", 12); plus.setGravity(Gravity.CENTER); plus.setTextColor(accent); plus.setMaxLines(1); plus.setEllipsize(TextUtils.TruncateAt.END);
                 plus.setContentDescription(date + "，还有 " + (tasks.size() - shown) + " 件，查看全部");

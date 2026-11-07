@@ -5,7 +5,7 @@ import androidx.room.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-@Database(entities = {Task.class, ReviewRecord.class}, version = 5, exportSchema = true)
+@Database(entities = {Task.class, ReviewRecord.class}, version = 6, exportSchema = true)
 public abstract class TodoDb extends RoomDatabase {
     public abstract TaskDao tasks();
     public abstract ReviewDao reviews();
@@ -31,13 +31,21 @@ public abstract class TodoDb extends RoomDatabase {
     };
     public static TodoDb get(Context context) {
         if (instance == null) synchronized (TodoDb.class) {
-            if (instance == null) instance = Room.databaseBuilder(context.getApplicationContext(), TodoDb.class, "todo.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build();
+            if (instance == null) instance = Room.databaseBuilder(context.getApplicationContext(), TodoDb.class, "todo.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build();
         }
         return instance;
     }
     public static final androidx.room.migration.Migration MIGRATION_4_5 = new androidx.room.migration.Migration(4, 5) {
         @Override public void migrate(androidx.sqlite.db.SupportSQLiteDatabase db) {
             db.execSQL("CREATE TABLE IF NOT EXISTS reviews (id TEXT NOT NULL PRIMARY KEY, goals TEXT, answers TEXT, finished INTEGER NOT NULL, updatedAt INTEGER NOT NULL)");
+        }
+    };
+    public static final androidx.room.migration.Migration MIGRATION_5_6 = new androidx.room.migration.Migration(5, 6) {
+        @Override public void migrate(androidx.sqlite.db.SupportSQLiteDatabase db) {
+            db.execSQL("ALTER TABLE tasks ADD COLUMN estimatedMinutes INTEGER");
+            db.execSQL("ALTER TABLE tasks ADD COLUMN reminderAt INTEGER");
+            // Preserve legacy reminder precedence; duration is deliberately not guessed.
+            db.execSQL("UPDATE tasks SET reminderAt = CASE WHEN startAt IS NOT NULL THEN startAt WHEN dueAt IS NOT NULL THEN dueAt - 900000 ELSE NULL END");
         }
     };
 }
