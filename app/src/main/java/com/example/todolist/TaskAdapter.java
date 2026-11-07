@@ -9,6 +9,9 @@ import android.view.*;
 import android.view.animation.OvershootInterpolator;
 import android.widget.*;
 import androidx.recyclerview.widget.*;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -53,22 +56,49 @@ final class TaskAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         return row.type == TASK ? row.task : null;
     }
 
-    void setData(List<Task> tasks, LocalDate selected) {
+    static int[] substepsProgress(String json) {
+        int done = 0, total = 0;
+        try {
+            JSONArray steps = new JSONArray(json == null ? "[]" : json);
+            for (int i = 0; i < steps.length(); i++) {
+                JSONObject step = steps.optJSONObject(i);
+                if (step == null) continue;
+                total++;
+                if (step.optBoolean("done")) done++;
+            }
+        } catch (JSONException ignored) {}
+        return new int[]{done, total};
+    }
+
+    private static boolean matches(Task t, String query, String tagFilter) {
+        if (t.deletedAt != null) return false;
+        if (!tagFilter.isEmpty() && !tagFilter.equals(t.tag)) return false;
+        if (query.isEmpty()) return true;
+        String haystack = (t.title + "\n" + t.tag + "\n" + t.note).toLowerCase();
+        return haystack.contains(query.toLowerCase());
+    }
+
+    void setData(List<Task> tasks, LocalDate selected, String query, String tagFilter) {
+        boolean searching = !query.isEmpty() || !tagFilter.isEmpty();
         List<Row> next = new ArrayList<>();
         next.add(new Row(CALENDAR, "calendar", "", null));
-        next.add(new Row(SECTION, "section-done", selected.format(DateTimeFormatter.ofPattern("M月d日")) + " · 已完成", null));
-        List<Task> completed = MonthGrid.tasksOn(tasks, selected);
-        if (completed.isEmpty()) next.add(new Row(EMPTY, "empty-done", "当天暂无完成记录", null));
+        next.add(new Row(SECTION, "section-done", searching ? "已完成 · 全部日期" : selected.format(DateTimeFormatter.ofPattern("M月d日")) + " · 已完成", null));
+        List<Task> completed = new ArrayList<>();
+        if (searching) {
+            for (Task t : tasks) if (t.completedAt != null && matches(t, query, tagFilter)) completed.add(t);
+            completed.sort((a, b) -> Long.compare(b.completedAt, a.completedAt));
+        } else completed = MonthGrid.tasksOn(tasks, selected);
+        if (completed.isEmpty()) next.add(new Row(EMPTY, "empty-done", searching ? "没有匹配的已完成事项" : "当天暂无完成记录", null));
         for (Task t : completed) next.add(new Row(TASK, "task-" + t.id, "", t.copy()));
-        boolean historical = selected.isBefore(LocalDate.now());
-        next.add(new Row(SECTION, "section-pending", historical ? "未完成" : "待办", null));
+        boolean historical = !searching && selected.isBefore(LocalDate.now());
+        next.add(new Row(SECTION, "section-pending", searching ? "待办 · 全部日期" : historical ? "未完成" : "待办", null));
         int pending = 0;
         for (Task t : tasks) {
-            if (TaskDates.visibleInDateList(t, selected) && t.completedAt == null) {
-                next.add(new Row(TASK, "task-" + t.id, "", t.copy())); pending++;
-            }
+            boolean visible = searching ? (t.completedAt == null && matches(t, query, tagFilter))
+                : (TaskDates.visibleInDateList(t, selected) && t.completedAt == null);
+            if (visible) { next.add(new Row(TASK, "task-" + t.id, "", t.copy())); pending++; }
         }
-        if (pending == 0) next.add(new Row(EMPTY, "empty-pending", historical ? "没有未完成事项" : "暂无待办", null));
+        if (pending == 0) next.add(new Row(EMPTY, "empty-pending", searching ? "没有匹配的待办事项" : historical ? "没有未完成事项" : "今天很轻松，享受吧！", null));
         next.add(new Row(SPACER, "spacer", "", null));
         calendarView = calendar.get();
         if (calendarHolder != null) {
@@ -102,7 +132,8 @@ final class TaskAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private static boolean sameTask(Task a, Task b) {
         return Objects.equals(a.title, b.title) && Objects.equals(a.tag, b.tag) && a.priority == b.priority
             && Objects.equals(a.completedAt, b.completedAt) && Objects.equals(a.estimatedMinutes, b.estimatedMinutes)
-            && Objects.equals(a.reminderAt, b.reminderAt) && Objects.equals(a.taskDate, b.taskDate);
+            && Objects.equals(a.reminderAt, b.reminderAt) && Objects.equals(a.taskDate, b.taskDate)
+            && Objects.equals(a.repeat, b.repeat) && Objects.equals(a.note, b.note) && Objects.equals(a.substeps, b.substeps);
     }
 
     @Override public int getItemCount() { return rows.size(); }
@@ -122,12 +153,16 @@ final class TaskAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 return new RecyclerView.ViewHolder(view) {};
             }
             case EMPTY: {
-                TextView view = text("", 13, muted, false);
-                view.setGravity(Gravity.CENTER);
-                RecyclerView.LayoutParams params = new RecyclerView.LayoutParams(-1, dp(54));
+                LinearLayout box = new LinearLayout(context);
+                box.setOrientation(LinearLayout.VERTICAL); box.setGravity(Gravity.CENTER);
+                TextView emoji = text("", 26, muted, false); emoji.setTag("emoji"); emoji.setGravity(Gravity.CENTER);
+                box.addView(emoji, new LinearLayout.LayoutParams(-1, -2));
+                TextView label = text("", 13, muted, false); label.setTag("label"); label.setGravity(Gravity.CENTER);
+                box.addView(label, new LinearLayout.LayoutParams(-1, -2));
+                RecyclerView.LayoutParams params = new RecyclerView.LayoutParams(-1, dp(92));
                 params.setMargins(dp(16), 0, dp(16), dp(6));
-                view.setLayoutParams(params);
-                return new RecyclerView.ViewHolder(view) {};
+                box.setLayoutParams(params);
+                return new RecyclerView.ViewHolder(box) {};
             }
             case SPACER: {
                 View view = new View(context);
@@ -148,7 +183,13 @@ final class TaskAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 calendarHolder = frame;
                 break;
             }
-            case SECTION: case EMPTY: ((TextView) holder.itemView).setText(row.text); break;
+            case SECTION: ((TextView) holder.itemView).setText(row.text); break;
+            case EMPTY: {
+                ((TextView) holder.itemView.findViewWithTag("emoji")).setText(
+                    row.text.startsWith("没有匹配") ? "🔍" : row.text.equals("没有未完成事项") ? "🌙" : row.text.contains("完成") ? "🌤" : "🌿");
+                ((TextView) holder.itemView.findViewWithTag("label")).setText(row.text);
+                break;
+            }
             case TASK: bindTask(holder.itemView, row.task); break;
         }
     }
@@ -157,7 +198,9 @@ final class TaskAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         LinearLayout card = new LinearLayout(context);
         card.setGravity(Gravity.CENTER_VERTICAL);
         card.setPadding(dp(6), dp(8), dp(6), dp(8));
-        card.setBackground(UiStyle.press(context, surface, 14, accent));
+        card.setBackground(UiStyle.press(context, surface, 18, accent));
+        card.setElevation(dp(1));
+        if (Build.VERSION.SDK_INT >= 28) card.setOutlineAmbientShadowColor(Color.parseColor("#593A2E1E"));
         ImageButton check = new ImageButton(context); check.setTag("check");
         check.setBackground(UiStyle.press(context, Color.TRANSPARENT, 22, accent));
         card.addView(check, new LinearLayout.LayoutParams(dp(44), dp(48)));
@@ -182,9 +225,14 @@ final class TaskAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         title.setMaxLines(3); title.setEllipsize(TextUtils.TruncateAt.END);
         if (t.completedAt != null) title.setPaintFlags(title.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG);
         content.addView(title); space(content, 2);
-        String detail = (t.tag.isEmpty() ? "未分类" : t.tag) + "  ·  " + new String[]{"低优先级", "中优先级", "高优先级"}[t.priority];
-        content.addView(text(detail, 11, t.priority == 2 ? color(dark ? "#F4A39B" : "#BC6053") : t.priority == 1 ? color(dark ? "#E4C48A" : "#9A7A36") : muted, false));
-        String timing = t.estimatedMinutes == null ? "" : "预计 " + TaskDates.durationLabel(t.estimatedMinutes);
+        LinearLayout meta = new LinearLayout(context); meta.setGravity(Gravity.CENTER_VERTICAL);
+        meta.addView(text(t.tag.isEmpty() ? "未分类" : t.tag, 11, muted, false));
+        meta.addView(text("  ·  ", 11, muted, false));
+        meta.addView(text(new String[]{"低优先级", "中优先级", "高优先级"}[t.priority], 11,
+            t.priority == 2 ? color(dark ? "#F0A89B" : "#C96A5A") : t.priority == 1 ? color(dark ? "#EFBE93" : "#B08A3E") : muted, false));
+        content.addView(meta);
+        String timing = t.repeat == null ? "" : t.repeat.equals("daily") ? "每天重复" : t.repeat.equals("weekly") ? "每周重复" : "";
+        if (t.estimatedMinutes != null) timing += (timing.isEmpty() ? "" : " · ") + "预计 " + TaskDates.durationLabel(t.estimatedMinutes);
         if (t.reminderAt != null) {
             LocalDate taskDay = TaskDates.date(t.taskDate == null ? t.createdAt : t.taskDate);
             String reminder = TaskDates.date(t.reminderAt).equals(taskDay)
@@ -193,8 +241,16 @@ final class TaskAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             timing += (timing.isEmpty() ? "" : " · ") + "提醒 " + reminder;
         }
         if (!timing.isEmpty()) { space(content, 4); content.addView(text(timing, 12, muted, false)); }
+        int[] progress = substepsProgress(t.substeps);
+        if (progress[1] > 0) { space(content, 4); content.addView(text("子任务 " + progress[0] + "/" + progress[1], 12, progress[0] == progress[1] ? accent : muted, false)); }
+        if (t.note != null && !t.note.isEmpty()) {
+            space(content, 4);
+            TextView note = text(t.note, 12, muted, false);
+            note.setMaxLines(1); note.setEllipsize(TextUtils.TruncateAt.END);
+            content.addView(note);
+        }
         check.setScaleX(1f); check.setScaleY(1f);
-        check.setImageDrawable(UiStyle.icon(context, t.completedAt == null ? "circle" : "check", t.completedAt == null ? muted : accent, 24));
+        check.setImageDrawable(UiStyle.icon(context, t.completedAt == null ? "circle" : "checkfill", t.completedAt == null ? muted : accent, 24));
         check.setContentDescription(t.completedAt == null ? "完成：" + t.title : "恢复待办：" + t.title);
         check.setOnClickListener(v -> {
             v.performHapticFeedback(Build.VERSION.SDK_INT >= 30 ? HapticFeedbackConstants.CONFIRM : HapticFeedbackConstants.VIRTUAL_KEY);
@@ -239,7 +295,7 @@ final class TaskAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             checkIcon = UiStyle.icon(context, "check", Color.WHITE, 22);
             trashIcon = UiStyle.icon(context, "trash", Color.WHITE, 22);
             iconInset = UiStyle.dp(context, 20);
-            corner = UiStyle.dp(context, 14);
+            corner = UiStyle.dp(context, 18);
         }
         @Override public int getMovementFlags(RecyclerView recyclerView, RecyclerView.ViewHolder viewHolder) {
             int position = viewHolder.getBindingAdapterPosition();

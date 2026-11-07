@@ -84,6 +84,11 @@ final class UiStyle {
                     canvas.drawCircle(9, 6, 2.2f, paint); canvas.drawCircle(16, 12, 2.2f, paint); canvas.drawCircle(9, 18, 2.2f, paint); break;
                 case "plus": path(canvas, 12, 5, 12, 19); path(canvas, 5, 12, 19, 12); break;
                 case "check": canvas.drawCircle(12, 12, 8, paint); path(canvas, 8, 12, 11, 15, 16, 9); break;
+                case "checkfill":
+                    paint.setStyle(Paint.Style.FILL); canvas.drawCircle(12, 12, 9, paint);
+                    int original = paint.getColor(); paint.setColor(Color.WHITE); paint.setStrokeWidth(2.2f);
+                    path(canvas, 8, 12.3f, 11, 15.3f, 16.2f, 8.8f);
+                    paint.setColor(original); paint.setStrokeWidth(1.7f); paint.setStyle(Paint.Style.STROKE); break;
                 case "circle": canvas.drawCircle(12, 12, 8, paint); break;
                 case "more":
                     paint.setStyle(Paint.Style.FILL); for (int x = 6; x <= 18; x += 6) canvas.drawCircle(x, 12, 1.2f, paint); paint.setStyle(Paint.Style.STROKE); break;
@@ -96,6 +101,15 @@ final class UiStyle {
                     path(canvas, 5, 17, 7, 14, 7, 9); canvas.drawArc(7, 4, 17, 14, 180, 180, false, paint);
                     path(canvas, 17, 9, 17, 14, 19, 17, 5, 17); canvas.drawArc(10, 18, 14, 22, 0, 180, false, paint); break;
                 case "tag": path(canvas, 3, 4, 12, 4, 21, 13, 13, 21, 3, 11, 3, 4); canvas.drawCircle(8, 8, 1, paint); break;
+                case "search": canvas.drawCircle(10.5f, 10.5f, 6f, paint); path(canvas, 15.2f, 15.2f, 20, 20); break;
+                case "import":
+                    path(canvas, 5, 13, 5, 20, 19, 20, 19, 13); path(canvas, 12, 3, 12, 15); path(canvas, 8, 11, 12, 15, 16, 11); break;
+                case "palette":
+                    canvas.drawCircle(12, 12, 8.5f, paint);
+                    paint.setStyle(Paint.Style.FILL);
+                    canvas.drawCircle(8.8f, 10.5f, 1.3f, paint); canvas.drawCircle(12, 8.6f, 1.3f, paint);
+                    canvas.drawCircle(15.2f, 10.5f, 1.3f, paint); canvas.drawCircle(12, 14.8f, 1.3f, paint);
+                    paint.setStyle(Paint.Style.STROKE); break;
                 case "moon":
                     Path moon = new Path(); moon.moveTo(17, 3); moon.cubicTo(4, 0, 0, 17, 12, 21); moon.cubicTo(18, 23, 22, 17, 21, 13); moon.cubicTo(13, 17, 9, 7, 17, 3); canvas.drawPath(moon, paint); break;
             }

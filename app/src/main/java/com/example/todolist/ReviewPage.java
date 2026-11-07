@@ -59,14 +59,17 @@ final class ReviewPage extends LinearLayout {
     private LinearLayout row() { LinearLayout row = new LinearLayout(getContext()); row.setGravity(Gravity.CENTER_VERTICAL); return row; }
     private LinearLayout card() {
         LinearLayout card = new LinearLayout(getContext()); card.setOrientation(VERTICAL);
-        card.setPadding(dp(18), dp(16), dp(18), dp(16)); card.setBackground(background(surface, 18)); return card;
+        card.setPadding(dp(18), dp(16), dp(18), dp(16)); card.setBackground(background(surface, 22));
+        card.setElevation(dp(2));
+        if (android.os.Build.VERSION.SDK_INT >= 28) card.setOutlineAmbientShadowColor(android.graphics.Color.parseColor("#593A2E1E"));
+        return card;
     }
     private TextView action(String title, Runnable click) {
         boolean primary = title.equals("完成复盘");
         int primaryInk = (surface & 0xffffff) == 0xffffff ? android.graphics.Color.WHITE : android.graphics.Color.parseColor("#141E19");
         TextView view = text(title, 13, primary ? primaryInk : accent, true); view.setGravity(Gravity.CENTER);
         view.setPadding(dp(12), dp(8), dp(12), dp(8)); view.setMinHeight(dp(48));
-        view.setBackground(UiStyle.press(getContext(), primary ? accent : soft, 14, accent)); view.setOnClickListener(v -> click.run()); return view;
+        view.setBackground(UiStyle.press(getContext(), primary ? accent : soft, 16, accent)); view.setOnClickListener(v -> click.run()); return view;
     }
     private void change(int newType, LocalDate date) {
         persist(); type = newType; start = ReviewPeriod.start(type, date); navigation.accept(type, start); load();
@@ -116,13 +119,13 @@ final class ReviewPage extends LinearLayout {
             addView(date, new LayoutParams(-1, dp(40))); gap(this, 12);
         } else {
         addView(text("复盘", 22, ink, true), new LayoutParams(-1, dp(48)));
-        LinearLayout tabs = row(); tabs.setPadding(dp(4), dp(4), dp(4), dp(4)); tabs.setBackground(background(soft, 14));
+        LinearLayout tabs = row(); tabs.setPadding(dp(4), dp(4), dp(4), dp(4)); tabs.setBackground(background(soft, 18));
         String[] labels = {"每日", "每周", "每月"};
         for (int i = 0; i < 3; i++) {
             final int target = i;
             TextView tab = action(labels[i], () -> change(target, LocalDate.now()));
             tab.setTextColor(i == type ? accent : muted);
-            tab.setBackground(UiStyle.press(getContext(), i == type ? surface : android.graphics.Color.TRANSPARENT, 10, accent));
+            tab.setBackground(UiStyle.press(getContext(), i == type ? surface : android.graphics.Color.TRANSPARENT, 14, accent));
             LayoutParams params = new LayoutParams(0, dp(38), 1); params.setMargins(dp(2), 0, dp(2), 0); tab.setMinHeight(0); tabs.addView(tab, params);
         }
         addView(tabs); gap(this, 16);
@@ -182,7 +185,7 @@ final class ReviewPage extends LinearLayout {
             else { TextView completed = text("✓", 16, accent, true); completed.setGravity(Gravity.CENTER); completed.setContentDescription("已完成复盘"); header.addView(completed, new LayoutParams(dp(24), dp(24))); }
             item.addView(header); gap(item, 10);
             TextView excerpt = text(summary.toString(), 13, muted, false); excerpt.setLineSpacing(dp(4), 1f); excerpt.setMaxLines(2); excerpt.setEllipsize(TextUtils.TruncateAt.END); item.addView(excerpt);
-            item.setBackground(UiStyle.press(getContext(), surface, 18, accent));
+            item.setBackground(UiStyle.press(getContext(), surface, 22, accent));
             item.setContentDescription("查看复盘：" + dateTitle(date)); item.setOnClickListener(v -> open(date, note.finished));
             addView(item); gap(this, 10); shown++;
         }

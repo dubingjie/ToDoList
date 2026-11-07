@@ -19,11 +19,12 @@ import android.annotation.SuppressLint;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.*;
+import androidx.coordinatorlayout.widget.CoordinatorLayout;
+import androidx.lifecycle.ViewModelProvider;
 import com.google.android.material.bottomnavigation.BottomNavigationView;
 import com.google.android.material.navigation.NavigationBarView;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
-import com.google.android.material.materialswitch.MaterialSwitch;
 import com.google.android.material.snackbar.Snackbar;
 import java.io.*;
 import java.time.*;
@@ -35,7 +36,7 @@ public class MainActivity extends AppCompatActivity {
     private final Handler main = new Handler(Looper.getMainLooper());
     private List<Task> tasks = new ArrayList<>();
     private List<Task> trashed = new ArrayList<>();
-    private FrameLayout root;
+    private CoordinatorLayout root;
     private LinearLayout body;
     private String page = "清单", filter = "全部";
     private YearMonth month = YearMonth.now();
@@ -50,8 +51,11 @@ public class MainActivity extends AppCompatActivity {
     private ScrollView activeScroll;
     private ReviewPage activeReview;
     private TaskAdapter homeAdapter;
+    private MainViewModel vm;
     private View navView;
     private boolean fadeIn;
+    private String query = "", tagFilter = "";
+    private static final int EXPORT_BACKUP = 105, IMPORT_BACKUP = 106;
     private int reviewType, statsTab;
     private LocalDate reviewDate = LocalDate.now();
     private boolean reviewDetail, reviewReading;
@@ -67,9 +71,12 @@ public class MainActivity extends AppCompatActivity {
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
     @Override public void onCreate(Bundle state) {
-        dark = getPreferences(MODE_PRIVATE).getBoolean("dark", false);
-        setTheme(dark ? R.style.AppThemeDark : R.style.AppThemeLight);
+        dark = resolveDark();
+        setTheme(themeRes());
         super.onCreate(state);
+        vm = new ViewModelProvider(this).get(MainViewModel.class);
+        vm.tasks.observe(this, list -> { tasks = list; refreshContent(); });
+        vm.trashed.observe(this, list -> { trashed = list; if (page.equals("回收站") || page.equals("设置")) render(); });
         if (state != null) pendingExportMonth = YearMonth.parse(state.getString("exportMonth", YearMonth.now().toString()));
         if (state != null) homeCalendarExpanded = state.getBoolean("homeCalendarExpanded", false);
         if (state != null) {
@@ -82,7 +89,7 @@ public class MainActivity extends AppCompatActivity {
         Reminders.channel(this);
         colors(); render();
         taskChangedReceiver = new BroadcastReceiver() { @Override public void onReceive(Context context, Intent intent) {
-            if (!refreshDay()) reload();
+            if (!refreshDay()) refreshContent();
             if (resumed) scheduleDayRefresh();
         } };
         IntentFilter taskFilter = new IntentFilter("com.example.todolist.TASKS_CHANGED");
@@ -93,7 +100,7 @@ public class MainActivity extends AppCompatActivity {
     }
     @Override protected void onResume() {
         super.onResume(); resumed = true;
-        if (!refreshDay()) reload();
+        if (!refreshDay()) refreshContent();
         scheduleDayRefresh();
         TodoDb.IO.execute(() -> TodoWidget.updateAll(this));
     }
@@ -103,7 +110,7 @@ public class MainActivity extends AppCompatActivity {
         if (today.equals(displayedToday)) return false;
         if (selected.equals(displayedToday)) { selected = today; month = YearMonth.from(today); savedScrollY = 0; }
         displayedToday = today;
-        reload();
+        refreshContent();
         TodoDb.IO.execute(() -> TodoWidget.updateAll(this));
         return true;
     }
@@ -126,9 +133,40 @@ public class MainActivity extends AppCompatActivity {
         reviewBackRegistered = needed;
     }
     private void colors() {
-        bg = color(dark ? "#141E19" : "#F8FAF7"); surface = color(dark ? "#1E2C24" : "#FFFFFF");
-        ink = color(dark ? "#E8EFE8" : "#283C31"); muted = color(dark ? "#B2BFB6" : "#627369");
-        accent = color(dark ? "#A4D7AD" : "#397557"); soft = color(dark ? "#30483A" : "#EAF2E9"); border = color(dark ? "#34463A" : "#E5ECE4");
+        bg = color(dark ? "#1B1611" : "#FBF7F0"); surface = color(dark ? "#292118" : "#FFFFFF");
+        ink = color(dark ? "#F0E8DB" : "#3F3A33"); muted = color(dark ? "#AB9F8C" : "#A39A8B");
+        border = color(dark ? "#3C342A" : "#EFE6D8");
+        accent = color(paletteAccent());
+        soft = blend(accent, surface, dark ? .22f : .12f);
+    }
+    private int darkMode() {
+        android.content.SharedPreferences prefs = getPreferences(MODE_PRIVATE);
+        if (!prefs.contains("darkMode")) prefs.edit().putInt("darkMode", prefs.getBoolean("dark", false) ? 2 : 0).apply();
+        return prefs.getInt("darkMode", 0);
+    }
+    private boolean resolveDark() {
+        int mode = darkMode();
+        if (mode == 0) return (getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+        return mode == 2;
+    }
+    private String accentKey() { return getPreferences(MODE_PRIVATE).getString("accent", "amber"); }
+    private String paletteAccent() {
+        switch (accentKey()) {
+            case "green": return dark ? "#A9C9A4" : "#6F8F6A";
+            case "blue": return dark ? "#A9C4E0" : "#6E93BC";
+            case "rose": return dark ? "#E8B4C0" : "#C4748A";
+            case "violet": return dark ? "#C4B8E4" : "#8F7FBE";
+            default: return dark ? "#EFBE93" : "#CE8A4E";
+        }
+    }
+    private int themeRes() {
+        switch (accentKey()) {
+            case "green": return dark ? R.style.AppThemeDarkGreen : R.style.AppThemeLightGreen;
+            case "blue": return dark ? R.style.AppThemeDarkBlue : R.style.AppThemeLightBlue;
+            case "rose": return dark ? R.style.AppThemeDarkRose : R.style.AppThemeLightRose;
+            case "violet": return dark ? R.style.AppThemeDarkViolet : R.style.AppThemeLightViolet;
+            default: return dark ? R.style.AppThemeDark : R.style.AppThemeLight;
+        }
     }
     private int color(String s) { return Color.parseColor(s); }
     private int dp(float n) { return (int) (n * getResources().getDisplayMetrics().density + .5f); }
@@ -143,22 +181,23 @@ public class MainActivity extends AppCompatActivity {
     private TextView button(String label, boolean filled, Runnable action) {
         TextView b = text(label, 14, filled ? (dark ? bg : Color.WHITE) : accent, true);
         b.setGravity(Gravity.CENTER); b.setPadding(dp(14), dp(12), dp(14), dp(12)); b.setMinHeight(dp(48));
-        b.setBackground(UiStyle.press(this, filled ? accent : soft, 14, accent)); b.setOnClickListener(v -> action.run()); return b;
+        b.setBackground(UiStyle.press(this, filled ? accent : soft, 16, accent)); b.setOnClickListener(v -> action.run()); return b;
     }
     private void heading(String name, String sub) { body.addView(text(name, 30, ink, true)); space(body, 6); body.addView(text(sub, 13, muted, false)); space(body, 24); }
-    private LinearLayout card() { LinearLayout l = column(); l.setPadding(dp(18), dp(18), dp(18), dp(18)); l.setBackground(box(surface, 18)); return l; }
-    private void reload() {
-        TodoDb.IO.execute(() -> { List<Task> all = TodoDb.get(this).tasks().all(); List<Task> trash = TodoDb.get(this).tasks().trash(); main.post(() -> {
-            if (isDestroyed()) return;
-            tasks = all; trashed = trash;
-            if (homeAdapter != null && page.equals("清单")) homeAdapter.setData(all, selected); else render();
-        }); });
+    private LinearLayout card() {
+        LinearLayout l = column(); l.setPadding(dp(18), dp(18), dp(18), dp(18)); l.setBackground(box(surface, 22));
+        l.setElevation(dp(1.5f));
+        if (Build.VERSION.SDK_INT >= 28) l.setOutlineAmbientShadowColor(color("#593A2E1E"));
+        return l;
+    }
+    private void refreshContent() {
+        if (homeAdapter != null && page.equals("清单")) homeAdapter.setData(tasks, selected, query, tagFilter); else render();
     }
     private void render() {
         if (activeReview != null) { reviewDetail = activeReview.isDetail(); reviewReading = activeReview.isReading(); activeReview.persist(); activeReview = null; }
         if (activeScroll != null) savedScrollY = activeScroll.getScrollY();
         homeAdapter = null;
-        root = new FrameLayout(this); root.setBackgroundColor(bg); root.setClipChildren(false);
+        root = new CoordinatorLayout(this); root.setBackgroundColor(bg); root.setClipChildren(false);
         root.setOnApplyWindowInsetsListener((v, insets) -> {
             if (Build.VERSION.SDK_INT >= 30) {
                 android.graphics.Insets bars = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.ime());
@@ -204,14 +243,14 @@ public class MainActivity extends AppCompatActivity {
             fab.setImageTintList(ColorStateList.valueOf(Color.WHITE));
             fab.setBackgroundTintList(ColorStateList.valueOf(accent));
             fab.setContentDescription("添加待办事项"); fab.setOnClickListener(v -> editor(null));
-            FrameLayout.LayoutParams fp = new FrameLayout.LayoutParams(-2, -2, Gravity.END | Gravity.BOTTOM); fp.setMargins(0, 0, dp(22), dp(96)); root.addView(fab, fp);
+            CoordinatorLayout.LayoutParams fp = new CoordinatorLayout.LayoutParams(-2, -2); fp.gravity = Gravity.END | Gravity.BOTTOM; fp.setMargins(0, 0, dp(22), dp(96)); root.addView(fab, fp);
         }
         if (page.equals("复盘")) {
             ReviewPage review = activeReview;
             TextView write = button("写复盘", true, () -> review.open(LocalDate.now(), false));
             write.setCompoundDrawables(UiStyle.icon(this, "review", dark ? bg : Color.WHITE, 18), null, null, null); write.setCompoundDrawablePadding(dp(8));
             write.setElevation(dp(2));
-            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-2, dp(48), Gravity.END | Gravity.BOTTOM); params.setMargins(0, 0, dp(20), dp(92)); root.addView(write, params);
+            CoordinatorLayout.LayoutParams params = new CoordinatorLayout.LayoutParams(-2, dp(48)); params.gravity = Gravity.END | Gravity.BOTTOM; params.setMargins(0, 0, dp(20), dp(92)); root.addView(write, params);
             review.modeChanged = () -> {
                 reviewDetail = review.isDetail(); reviewReading = review.isReading();
                 write.setVisibility(reviewDetail ? View.GONE : View.VISIBLE);
@@ -226,7 +265,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView homeAction(String label, Runnable action) {
         TextView view = button(label, false, action);
         view.setPadding(dp(12), dp(8), dp(12), dp(8));
-        GradientDrawable background = box(soft, 12);
+        GradientDrawable background = box(soft, 14);
         background.setStroke(dp(1), border); view.setBackground(background);
         return view;
     }
@@ -247,8 +286,70 @@ public class MainActivity extends AppCompatActivity {
         list.setClipToPadding(false);
         list.setAdapter(homeAdapter);
         new ItemTouchHelper(new TaskAdapter.Swipe(homeAdapter, listener, this, dark, accent)).attachToRecyclerView(list);
-        homeAdapter.setData(tasks, selected);
+        shell.addView(searchBar(), new LinearLayout.LayoutParams(-1, -2));
         shell.addView(list, new LinearLayout.LayoutParams(-1, 0, 1));
+        homeAdapter.setData(tasks, selected, query, tagFilter);
+    }
+    private View searchBar() {
+        LinearLayout bar = column();
+        bar.setPadding(dp(16), dp(6), dp(16), dp(2));
+        bar.setBackgroundColor(bg);
+        LinearLayout field = row();
+        field.setBackground(box(soft, 20));
+        ImageView icon = new ImageView(this);
+        icon.setImageDrawable(UiStyle.icon(this, "search", muted, 18));
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(18), dp(18));
+        iconParams.setMargins(dp(12), 0, dp(6), 0);
+        field.addView(icon, iconParams);
+        EditText input = new EditText(this);
+        input.setHint("搜索事项、备注或标签"); input.setTextSize(14); input.setSingleLine();
+        input.setTextColor(ink); input.setHintTextColor(muted);
+        input.setBackgroundColor(Color.TRANSPARENT); input.setText(query);
+        UiStyle.typography(input, false);
+        input.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override public void afterTextChanged(Editable s) {
+                query = s.toString().trim();
+                if (homeAdapter != null) homeAdapter.setData(tasks, selected, query, tagFilter);
+            }
+        });
+        field.addView(input, new LinearLayout.LayoutParams(0, dp(44), 1));
+        bar.addView(field);
+        LinkedHashSet<String> tags = new LinkedHashSet<>(Arrays.asList("学习", "工作", "生活"));
+        for (Task t : tasks) if (t.tag != null && !t.tag.isEmpty()) tags.add(t.tag);
+        HorizontalScrollView scroller = new HorizontalScrollView(this);
+        scroller.setHorizontalScrollBarEnabled(false);
+        LinearLayout chips = row();
+        addTagChip(chips, "全部", tagFilter.isEmpty());
+        for (String tag : tags) addTagChip(chips, tag, tagFilter.equals(tag));
+        scroller.addView(chips);
+        bar.addView(scroller, new LinearLayout.LayoutParams(-1, -2));
+        return bar;
+    }
+    private void addTagChip(LinearLayout chips, String label, boolean active) {
+        TextView chip = text(label, 13, active ? accent : muted, active);
+        chip.setGravity(Gravity.CENTER);
+        GradientDrawable bg = box(active ? soft : Color.TRANSPARENT, 16);
+        if (active) bg.setStroke(dp(1), accent);
+        chip.setBackground(bg);
+        chip.setOnClickListener(v -> {
+            tagFilter = label.equals("全部") ? "" : label;
+            for (int i = 0; i < chips.getChildCount(); i++) {
+                TextView c = (TextView) chips.getChildAt(i);
+                boolean on = c.getText().toString().equals(label);
+                c.setTextColor(on ? accent : muted);
+                UiStyle.typography(c, on);
+                GradientDrawable cbg = box(on ? soft : Color.TRANSPARENT, 16);
+                if (on) cbg.setStroke(dp(1), accent);
+                c.setBackground(cbg);
+            }
+            if (homeAdapter != null) homeAdapter.setData(tasks, selected, query, tagFilter);
+        });
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, dp(34));
+        params.setMargins(0, dp(6), dp(8), dp(4));
+        chip.setPadding(dp(12), 0, dp(12), 0);
+        chips.addView(chip, params);
     }
     private View homeHeaderView() {
         LinearLayout container = column(); container.setBackgroundColor(bg); container.setPadding(dp(16), dp(2), dp(16), 0);
@@ -302,11 +403,11 @@ public class MainActivity extends AppCompatActivity {
             LocalDate start = first.minusDays(first.getDayOfWeek().getValue() % 7);
             LinearLayout monthRows = column(); monthRows.setPadding(0, 0, 0, 0); monthRows.setBaselineAligned(false);
             for (int rowIndex = 0; rowIndex < 6; rowIndex++) {
-                LinearLayout week = row(); week.setPadding(0, 0, 0, 0); week.setGravity(Gravity.CENTER); week.setBaselineAligned(false); week.setBackgroundColor(color(dark ? "#26362C" : "#F5F8F2"));
+                LinearLayout week = row(); week.setPadding(0, 0, 0, 0); week.setGravity(Gravity.CENTER); week.setBaselineAligned(false); week.setBackgroundColor(color(dark ? "#282219" : "#F3EDE2"));
                 for (int col = 0; col < 7; col++) {
                     LocalDate date = start.plusDays(rowIndex * 7L + col);
                     boolean inMonth = YearMonth.from(date).equals(displayMonth);
-                    int dayColor = !inMonth ? color(dark ? "#526158" : "#B7C0B8") : (date.equals(selected) ? accent : ink);
+                    int dayColor = !inMonth ? color(dark ? "#6B6154" : "#C4B9A6") : (date.equals(selected) ? accent : ink);
                     TextView cell = text(String.valueOf(date.getDayOfMonth()) + (MonthGrid.tasksOn(tasks, date).isEmpty() ? "" : "\n•"), 15, dayColor, true);
                     cell.setGravity(Gravity.CENTER); cell.setMaxLines(2); cell.setContentDescription(date.toString());
                     if (date.equals(LocalDate.now())) cell.setText("今\n" + date.getDayOfMonth());
@@ -324,7 +425,7 @@ public class MainActivity extends AppCompatActivity {
                     UiStyle.typography(cell, date.equals(selected) || !visibleDayTasks.isEmpty());
                     cell.setGravity(Gravity.CENTER); cell.setMaxLines(3); cell.setEllipsize(TextUtils.TruncateAt.END);
                     GradientDrawable gridBackground = box(date.equals(selected) ? accent : (visibleDayTasks.isEmpty() ? surface : soft), 0);
-                    gridBackground.setStroke(dp(1), color(dark ? "#34463A" : "#DCE6DA"));
+                    gridBackground.setStroke(dp(1), color(dark ? "#3C342A" : "#E9DFCC"));
                     cell.setBackground(gridBackground);
                     cell.setText(date.equals(LocalDate.now()) ? "今" : String.valueOf(date.getDayOfMonth()));
                     cell.setTextSize(15); cell.setTextColor(date.equals(selected) ? (dark ? bg : Color.WHITE) : dayColor);
@@ -370,19 +471,40 @@ public class MainActivity extends AppCompatActivity {
     }
     private String dateTime(long time) { return Instant.ofEpochMilli(time).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("M月d日 HH:mm")); }
     private void actions(Task t) { new MaterialAlertDialogBuilder(this).setTitle(t.title).setItems(new String[]{"编辑事项", t.completedAt == null ? "标记完成" : "恢复为待办", "删除事项"}, (d, n) -> { if (n == 0) editor(t); else if (n == 1) toggle(t); else delete(t); }).show(); }
-    private void toggle(Task t) { Task next = t.copy(); next.completedAt = t.completedAt == null ? System.currentTimeMillis() : null; save(next); }
+    private void toggle(Task t) {
+        Task next = t.copy(); next.completedAt = t.completedAt == null ? System.currentTimeMillis() : null;
+        save(next);
+        if (next.completedAt != null && next.repeat != null && !next.repeat.isEmpty()) spawnNextRepeat(next);
+    }
+    private void spawnNextRepeat(Task t) {
+        LocalDate day = TaskDates.date(t.taskDate == null ? t.createdAt : t.taskDate);
+        long days = t.repeat.equals("weekly") ? 7 : 1;
+        Task next = t.copy();
+        next.id = 0; next.completedAt = null; next.createdAt = System.currentTimeMillis();
+        next.taskDate = day.plusDays(days).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();
+        if (next.reminderAt != null) next.reminderAt = Instant.ofEpochMilli(next.reminderAt).atZone(ZoneId.systemDefault()).toLocalDateTime().plusDays(days).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+        if (next.dueAt != null) next.dueAt = Instant.ofEpochMilli(next.dueAt).atZone(ZoneId.systemDefault()).toLocalDateTime().plusDays(days).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+        if (next.startAt != null) next.startAt = Instant.ofEpochMilli(next.startAt).atZone(ZoneId.systemDefault()).toLocalDateTime().plusDays(days).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+        try {
+            org.json.JSONArray steps = new org.json.JSONArray(next.substeps == null ? "[]" : next.substeps);
+            for (int i = 0; i < steps.length(); i++) { org.json.JSONObject step = steps.optJSONObject(i); if (step != null) step.put("done", false); }
+            next.substeps = steps.toString();
+        } catch (org.json.JSONException e) { next.substeps = "[]"; }
+        TodoDb.IO.execute(() -> {
+            next.id = TodoDb.get(this).tasks().save(next); Reminders.schedule(this, next); TodoWidget.updateAll(this);
+            main.post(() -> toast("已完成，已安排下一次"));
+        });
+    }
     private void save(Task t) {
         TodoDb.IO.execute(() -> {
             t.id = TodoDb.get(this).tasks().save(t); Reminders.schedule(this, t); TodoWidget.updateAll(this);
-            main.post(this::reload);
         });
     }
     private void delete(Task t) {
         TodoDb.IO.execute(() -> {
             TodoDb.get(this).tasks().moveToTrash(t.id, System.currentTimeMillis()); Reminders.cancel(this, t); TodoWidget.updateAll(this);
             main.post(() -> {
-                if (isDestroyed() || root == null) { reload(); return; }
-                reload();
+                if (isDestroyed() || root == null) return;
                 String title = t.title.length() > 12 ? t.title.substring(0, 12) + "…" : t.title;
                 Snackbar undo = Snackbar.make(root, "已删除「" + title + "」", Snackbar.LENGTH_LONG).setAction("撤销", v -> undoDelete(t));
                 if (navView != null) undo.setAnchorView(navView);
@@ -396,12 +518,11 @@ public class MainActivity extends AppCompatActivity {
             Task current = TodoDb.get(this).tasks().find(t.id);
             if (current != null) Reminders.schedule(this, current);
             TodoWidget.updateAll(this);
-            main.post(this::reload);
         });
     }
     private TextView timeField(LinearLayout form, String label, TextView clear) {
         LinearLayout line = row();
-        line.setBackground(box(soft, 12));
+        line.setBackground(box(soft, 16));
         LinearLayout content = column();
         content.setPadding(dp(14), dp(10), dp(8), dp(10));
         content.addView(text(label, 12, muted, false));
@@ -439,6 +560,11 @@ public class MainActivity extends AppCompatActivity {
         space(form, 12); form.addView(text("分类标签", 13, muted, true));
         AutoCompleteTextView tag = new AutoCompleteTextView(this); tag.setSingleLine(); tag.setText(draft.tag); tag.setHint("学习 / 工作 / 生活，也可以自定义"); tag.setFilters(new InputFilter[]{new InputFilter.LengthFilter(20)}); tag.setAdapter(UiStyle.choices(this, android.R.layout.simple_dropdown_item_1line, new String[]{"学习", "工作", "生活"})); tag.setThreshold(0); tag.setOnFocusChangeListener((v, focused) -> { if (focused) tag.showDropDown(); }); form.addView(tag);
         UiStyle.typography(tag, false);
+        space(form, 12); form.addView(text("重复", 13, muted, true));
+        Spinner repeatSpinner = new Spinner(this);
+        repeatSpinner.setAdapter(UiStyle.choices(this, android.R.layout.simple_spinner_dropdown_item, new String[]{"不重复", "每天重复", "每周重复"}));
+        repeatSpinner.setSelection(draft.repeat == null ? 0 : draft.repeat.equals("daily") ? 1 : draft.repeat.equals("weekly") ? 2 : 0);
+        form.addView(repeatSpinner, new LinearLayout.LayoutParams(-1, dp(52)));
         space(form, 18);
         TextView clearDuration = text("×", 22, muted, false);
         TextView duration = timeField(form, "预计耗时", clearDuration);
@@ -488,6 +614,53 @@ public class MainActivity extends AppCompatActivity {
                     }).show();
             }, initial.getYear(), initial.getMonthValue() - 1, initial.getDayOfMonth()).show();
         });
+        space(form, 18); form.addView(text("子任务", 13, muted, true)); space(form, 4);
+        LinearLayout stepsList = column(); form.addView(stepsList);
+        List<EditText> stepTexts = new ArrayList<>();
+        List<Boolean> stepDone = new ArrayList<>();
+        java.util.function.BiConsumer<String, Boolean> addStep = (stepTitle, done) -> {
+            int index = stepTexts.size();
+            stepTexts.add(null); stepDone.add(done);
+            LinearLayout stepRow = row();
+            ImageButton check = new ImageButton(this);
+            check.setImageDrawable(UiStyle.icon(this, done ? "check" : "circle", done ? accent : muted, 22));
+            check.setBackground(UiStyle.press(this, Color.TRANSPARENT, 20, accent));
+            check.setOnClickListener(v -> {
+                int i = stepsList.indexOfChild(stepRow);
+                boolean now = !stepDone.get(i); stepDone.set(i, now);
+                check.setImageDrawable(UiStyle.icon(this, now ? "check" : "circle", now ? accent : muted, 22));
+            });
+            stepRow.addView(check, new LinearLayout.LayoutParams(dp(40), dp(44)));
+            EditText stepText = new EditText(this); stepText.setTextSize(14); stepText.setSingleLine();
+            stepText.setHint("子任务 " + (index + 1)); stepText.setText(stepTitle);
+            stepText.setTextColor(ink); stepText.setHintTextColor(muted);
+            stepText.setFilters(new InputFilter[]{new InputFilter.LengthFilter(100)});
+            UiStyle.typography(stepText, false);
+            stepTexts.set(index, stepText);
+            stepRow.addView(stepText, new LinearLayout.LayoutParams(0, -2, 1));
+            TextView remove = text("×", 20, muted, false); remove.setGravity(Gravity.CENTER);
+            remove.setContentDescription("删除子任务");
+            remove.setOnClickListener(v -> { int i = stepsList.indexOfChild(stepRow); if (i >= 0) { stepsList.removeViewAt(i); stepTexts.remove(i); stepDone.remove(i); } });
+            stepRow.addView(remove, new LinearLayout.LayoutParams(dp(40), dp(44)));
+            stepsList.addView(stepRow);
+        };
+        try {
+            org.json.JSONArray savedSteps = new org.json.JSONArray(draft.substeps == null ? "[]" : draft.substeps);
+            for (int i = 0; i < savedSteps.length(); i++) {
+                org.json.JSONObject step = savedSteps.optJSONObject(i);
+                if (step != null) addStep.accept(step.optString("t"), step.optBoolean("done"));
+            }
+        } catch (org.json.JSONException ignored) {}
+        TextView addStepButton = text("＋ 添加子任务", 13, accent, true);
+        addStepButton.setGravity(Gravity.CENTER_VERTICAL);
+        addStepButton.setOnClickListener(v -> addStep.accept("", false));
+        form.addView(addStepButton, new LinearLayout.LayoutParams(-1, dp(44)));
+        space(form, 12); form.addView(text("备注", 13, muted, true));
+        EditText note = new EditText(this); note.setHint("补充说明（可选）"); note.setText(draft.note); note.setTextSize(14);
+        note.setMinLines(2); note.setMaxLines(5); note.setGravity(Gravity.TOP);
+        note.setTextColor(ink); note.setHintTextColor(muted);
+        note.setFilters(new InputFilter[]{new InputFilter.LengthFilter(500)}); form.addView(note);
+        UiStyle.typography(note, false);
         space(form, 12); form.addView(text("按你设置的时间提醒；预计耗时与提醒时间可以分别设置。", 12, muted, false));
         ScrollView sc = new ScrollView(this); sc.addView(form);
         AlertDialog dialog = new MaterialAlertDialogBuilder(this).setTitle(original == null ? "记下一件事" : "编辑事项").setView(sc).setNegativeButton("取消", null).setPositiveButton("保存", null).create();
@@ -495,6 +668,15 @@ public class MainActivity extends AppCompatActivity {
             if (title.getText().toString().trim().isEmpty()) { title.setError("先写一点内容吧"); return; }
             if (draft.reminderAt != null && draft.reminderAt <= System.currentTimeMillis() && (original == null || !Objects.equals(original.reminderAt, draft.reminderAt))) { toast("提醒时间需要晚于现在"); return; }
             draft.title = title.getText().toString().trim(); draft.tag = tag.getText().toString().trim(); draft.priority = priority.getSelectedItemPosition();
+            draft.repeat = new String[]{"", "daily", "weekly"}[repeatSpinner.getSelectedItemPosition()];
+            draft.note = note.getText().toString().trim();
+            org.json.JSONArray steps = new org.json.JSONArray();
+            for (int i = 0; i < stepTexts.size(); i++) {
+                String stepTitle = stepTexts.get(i).getText().toString().trim();
+                if (stepTitle.isEmpty()) continue;
+                try { steps.put(new org.json.JSONObject().put("t", stepTitle).put("done", stepDone.get(i))); } catch (org.json.JSONException ignored) {}
+            }
+            draft.substeps = steps.toString();
             save(draft); dialog.dismiss(); if (draft.reminderAt != null) requestNotifications();
         })); dialog.show();
     }
@@ -562,12 +744,12 @@ public class MainActivity extends AppCompatActivity {
     private void statisticsHeader() {
         TextView title = text("统计", 22, ink, true); title.setPadding(dp(statsTab == 1 ? 12 : 0), 0, 0, 0);
         body.addView(title, new LinearLayout.LayoutParams(-1, dp(48)));
-        LinearLayout tabs = row(); tabs.setPadding(dp(4), dp(4), dp(4), dp(4)); tabs.setBackground(box(soft, 14));
+        LinearLayout tabs = row(); tabs.setPadding(dp(4), dp(4), dp(4), dp(4)); tabs.setBackground(box(soft, 18));
         String[] labels = {"概览", "月视图"};
         for (int i = 0; i < labels.length; i++) {
             final int index = i;
             TextView tab = text(labels[i], 14, statsTab == i ? accent : muted, statsTab == i);
-            tab.setGravity(Gravity.CENTER); tab.setBackground(UiStyle.press(this, statsTab == i ? surface : Color.TRANSPARENT, 10, accent));
+            tab.setGravity(Gravity.CENTER); tab.setBackground(UiStyle.press(this, statsTab == i ? surface : Color.TRANSPARENT, 14, accent));
             tab.setOnClickListener(v -> { if (activeScroll != null) activeScroll.scrollTo(0, 0); savedScrollY = 0; statsTab = index; render(); });
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(38), 1); params.setMargins(dp(2), 0, dp(2), 0); tabs.addView(tab, params);
         }
@@ -590,7 +772,26 @@ public class MainActivity extends AppCompatActivity {
         summary.addView(text(weekTotal == 0 ? "本周还没有安排事项" : "已完成 " + weekDone + " / " + weekTotal + " 件", 14, ink, true));
         space(summary, 10);
         summary.addView(text("本月完成 " + TaskDates.count(tasks, today.withDayOfMonth(1), today.withDayOfMonth(1).plusMonths(1)) + " 件", 13, muted, false));
+        int streak = streakDays();
+        if (streak > 0) { space(summary, 6); summary.addView(text("已连续完成 " + streak + " 天", 13, accent, true)); }
         body.addView(summary); space(body, 24);
+
+        body.addView(text("完成热力", 18, ink, true)); space(body, 10);
+        Map<LocalDate, Integer> daily = new HashMap<>();
+        for (Task t : tasks) if (t.deletedAt == null && t.completedAt != null) {
+            LocalDate day = TaskDates.date(t.completedAt);
+            daily.merge(day, 1, Integer::sum);
+        }
+        int[] levels = {soft, blend(accent, soft, .35f), blend(accent, soft, .7f), accent};
+        LinearLayout heat = card();
+        heat.addView(new HeatmapView(this, daily, levels, 18), new LinearLayout.LayoutParams(-1, -2));
+        space(heat, 10);
+        LinearLayout legend = row(); legend.setGravity(Gravity.CENTER_VERTICAL | Gravity.RIGHT);
+        legend.addView(text("少 ", 11, muted, false));
+        for (int level : levels) { View block = new View(this); block.setBackground(box(level, 3)); LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(dp(12), dp(12)); bp.setMargins(dp(2), 0, dp(2), 0); legend.addView(block, bp); }
+        legend.addView(text(" 多", 11, muted, false));
+        heat.addView(legend);
+        body.addView(heat); space(body, 20);
 
         body.addView(text("最近七天", 18, ink, true)); space(body, 10);
         int[] counts = new int[7]; int max = 1;
@@ -612,6 +813,23 @@ public class MainActivity extends AppCompatActivity {
         int totalCompleted = (int) tasks.stream().filter(t -> t.deletedAt == null && t.completedAt != null).count();
         body.addView(text("累计完成 " + totalCompleted + " 件", 13, muted, false));
         space(body, 8); body.addView(text("完成率按事项所属日期统计：本周事项中已完成的比例。七天图表与月视图按实际完成日期记录。", 12, muted, false));
+    }
+    private int streakDays() {
+        Set<LocalDate> days = new HashSet<>();
+        for (Task t : tasks) if (t.deletedAt == null && t.completedAt != null) days.add(TaskDates.date(t.completedAt));
+        LocalDate day = LocalDate.now();
+        if (!days.contains(day)) day = day.minusDays(1);
+        int streak = 0;
+        while (days.contains(day)) { streak++; day = day.minusDays(1); }
+        return streak;
+    }
+    private int blend(int a, int b, float fraction) {
+        float inverse = 1f - fraction;
+        return Color.argb(
+            Math.round(Color.alpha(a) * fraction + Color.alpha(b) * inverse),
+            Math.round(Color.red(a) * fraction + Color.red(b) * inverse),
+            Math.round(Color.green(a) * fraction + Color.green(b) * inverse),
+            Math.round(Color.blue(a) * fraction + Color.blue(b) * inverse));
     }
     private void settingsPageLegacy() {
         body.addView(text("设置", 20, ink, true)); space(body, 16);
@@ -641,15 +859,8 @@ public class MainActivity extends AppCompatActivity {
         body.addView(text("设置", 22, ink, true), new LinearLayout.LayoutParams(-1, dp(48))); space(body, 12);
         body.addView(text("偏好设置", 12, muted, true)); space(body, 10);
         LinearLayout preferences = settingsGroup();
-        LinearLayout themeRow = row();
-        TextView themeLabel = settingsLabel("深色模式", "moon"); themeRow.addView(themeLabel, new LinearLayout.LayoutParams(0, dp(58), 1));
-        MaterialSwitch theme = new MaterialSwitch(this); theme.setContentDescription("深色模式"); theme.setChecked(dark);
-        int[][] states = {new int[]{android.R.attr.state_checked}, new int[]{}};
-        theme.setThumbTintList(new ColorStateList(states, new int[]{accent, muted}));
-        theme.setTrackTintList(new ColorStateList(states, new int[]{soft, border}));
-        themeRow.addView(theme); preferences.addView(themeRow); settingsLine(preferences);
-        theme.setOnCheckedChangeListener((b, on) -> { getPreferences(MODE_PRIVATE).edit().putBoolean("dark", on).apply(); recreate(); });
-        themeRow.setBackground(UiStyle.press(this, Color.TRANSPARENT, 10, accent)); themeRow.setOnClickListener(v -> theme.setChecked(!theme.isChecked()));
+        settingRow(preferences, "深色模式", new String[]{"跟随系统", "浅色", "深色"}[darkMode()], "moon", this::chooseDarkMode); settingsLine(preferences);
+        settingRow(preferences, "主题色", accentName(), "palette", this::chooseAccent); settingsLine(preferences);
         String defaultTag = getPreferences(MODE_PRIVATE).getString("defaultTag", "学习");
         settingRow(preferences, "默认分类", defaultTag, "tag", this::chooseDefaultTag); settingsLine(preferences);
         boolean enabled = getSystemService(NotificationManager.class).areNotificationsEnabled();
@@ -661,11 +872,16 @@ public class MainActivity extends AppCompatActivity {
         space(body, 24); body.addView(text("数据管理", 12, muted, true)); space(body, 10);
         LinearLayout data = settingsGroup();
         settingRow(data, "回收站", trashed.size() + " 项", "trash", () -> { page = "回收站"; render(); }); settingsLine(data);
-        settingRow(data, "导出月视图", "PNG", "export", this::chooseExportMonth); body.addView(data);
+        settingRow(data, "导出月视图", "PNG", "export", this::chooseExportMonth); settingsLine(data);
+        settingRow(data, "备份数据", "JSON", "export", this::exportBackup); settingsLine(data);
+        settingRow(data, "恢复备份", "", "import", this::importBackup); body.addView(data);
         space(body, 28); TextView version = text("一件一件 · " + BuildConfig.VERSION_NAME, 12, muted, false); version.setGravity(Gravity.CENTER); body.addView(version);
     }
     private LinearLayout settingsGroup() {
-        LinearLayout group = column(); group.setPadding(dp(14), dp(2), dp(14), dp(2)); group.setBackground(box(surface, 18)); return group;
+        LinearLayout group = column(); group.setPadding(dp(14), dp(2), dp(14), dp(2)); group.setBackground(box(surface, 22));
+        group.setElevation(dp(1.5f));
+        if (Build.VERSION.SDK_INT >= 28) group.setOutlineAmbientShadowColor(color("#593A2E1E"));
+        return group;
     }
     private TextView settingsLabel(String title, String icon) {
         TextView label = text(title, 15, ink, false);
@@ -679,6 +895,29 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout item = row(); item.setBackground(UiStyle.press(this, Color.TRANSPARENT, 10, accent));
         item.addView(settingsLabel(title, icon), new LinearLayout.LayoutParams(0, dp(58), 1));
         item.addView(text(value + "  ›", 12, muted, false)); item.setOnClickListener(v -> action.run()); group.addView(item);
+    }
+    private void chooseDarkMode() {
+        String[] choices = {"跟随系统", "浅色", "深色"};
+        new MaterialAlertDialogBuilder(this).setTitle("深色模式").setSingleChoiceItems(choices, darkMode(), (dialog, which) -> {
+            getPreferences(MODE_PRIVATE).edit().putInt("darkMode", which).apply(); dialog.dismiss(); recreate();
+        }).show();
+    }
+    private String accentName() {
+        switch (accentKey()) {
+            case "green": return "抹茶绿";
+            case "blue": return "雾霾蓝";
+            case "rose": return "豆沙粉";
+            case "violet": return "香芋紫";
+            default: return "焦糖杏";
+        }
+    }
+    private void chooseAccent() {
+        String[] keys = {"amber", "green", "blue", "rose", "violet"};
+        String[] choices = {"● 焦糖杏", "● 抹茶绿", "● 雾霾蓝", "● 豆沙粉", "● 香芋紫"};
+        int current = Math.max(0, Arrays.asList(keys).indexOf(accentKey()));
+        new MaterialAlertDialogBuilder(this).setTitle("主题色").setSingleChoiceItems(choices, current, (dialog, which) -> {
+            getPreferences(MODE_PRIVATE).edit().putString("accent", keys[which]).apply(); dialog.dismiss(); recreate();
+        }).show();
     }
     private void chooseDefaultTag() {
         String[] choices = new String[]{"学习", "工作", "生活"};
@@ -719,7 +958,7 @@ public class MainActivity extends AppCompatActivity {
         }
         body.addView(text(trashed.size() + " 项 · 可恢复或彻底删除", 12, muted, false)); space(body, 12);
         for (Task t : trashed) {
-            LinearLayout item = column(); item.setPadding(dp(16), dp(14), dp(16), dp(8)); item.setBackground(box(surface, 16));
+            LinearLayout item = column(); item.setPadding(dp(16), dp(14), dp(16), dp(8)); item.setBackground(box(surface, 20));
             TextView title = text(t.title, 16, ink, false); title.setMaxLines(3); title.setEllipsize(TextUtils.TruncateAt.END); item.addView(title);
             space(item, 6); item.addView(text("删除于 " + dateTime(t.deletedAt), 11, muted, false)); space(item, 6);
             LinearLayout actions = row();
@@ -730,7 +969,7 @@ public class MainActivity extends AppCompatActivity {
             remove.setOnClickListener(v -> new MaterialAlertDialogBuilder(this).setTitle("彻底删除这条事项？")
                 .setMessage(t.title + "\n删除后无法恢复。").setNegativeButton("取消", null)
                 .setPositiveButton("彻底删除", (d, w) -> {
-                    TodoDb.IO.execute(() -> { Task current = TodoDb.get(this).tasks().find(t.id); if (current != null && current.deletedAt != null) TodoDb.get(this).tasks().delete(current); main.post(this::reload); });
+                    TodoDb.IO.execute(() -> { Task current = TodoDb.get(this).tasks().find(t.id); if (current != null && current.deletedAt != null) TodoDb.get(this).tasks().delete(current); });
                 }).show());
             actions.addView(remove, new LinearLayout.LayoutParams(dp(80), dp(48))); item.addView(actions);
             body.addView(item); space(body, 10);
@@ -743,15 +982,12 @@ public class MainActivity extends AppCompatActivity {
                 TodoDb.get(this).tasks().restore(t.id); current.deletedAt = null;
                 Reminders.schedule(this, current); TodoWidget.updateAll(this);
             }
-            main.post(() -> { toast("已恢复事项"); reload(); });
+            main.post(() -> toast("已恢复事项"));
         });
     }
     private void emptyTrash() {
         new MaterialAlertDialogBuilder(this).setTitle("清空回收站？").setMessage("清空后所有删除事项将无法恢复。")
-            .setNegativeButton("取消", null).setPositiveButton("清空", (d, w) -> TodoDb.IO.execute(() -> {
-                TodoDb.get(this).tasks().emptyTrash();
-                main.post(this::reload);
-            })).show();
+            .setNegativeButton("取消", null).setPositiveButton("清空", (d, w) -> TodoDb.IO.execute(() -> TodoDb.get(this).tasks().emptyTrash())).show();
     }
     private void chooseExportMonth() {
         LinearLayout pickers = row(); pickers.setPadding(dp(24), 0, dp(24), 0);
@@ -789,10 +1025,108 @@ public class MainActivity extends AppCompatActivity {
     }
     @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] results) { super.onRequestPermissionsResult(request, permissions, results); if (request == 20 && results.length > 0 && results[0] != PackageManager.PERMISSION_GRANTED) toast("事项已保存；可在设置中开启提醒通知"); }
     private void toast(String s) { Toast.makeText(this, s, Toast.LENGTH_LONG).show(); }
+    private void exportBackup() {
+        startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/json").addCategory(Intent.CATEGORY_OPENABLE)
+            .putExtra(Intent.EXTRA_TITLE, "一件一件备份-" + LocalDate.now() + ".json"), EXPORT_BACKUP);
+    }
+    private void importBackup() {
+        new MaterialAlertDialogBuilder(this).setTitle("恢复备份？")
+            .setMessage("备份文件中的事项和复盘会与现有数据合并，相同记录以备份为准。")
+            .setNegativeButton("取消", null)
+            .setPositiveButton("选择文件", (d, w) -> startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("application/json").addCategory(Intent.CATEGORY_OPENABLE), IMPORT_BACKUP))
+            .show();
+    }
+    private org.json.JSONObject taskJson(Task t) throws org.json.JSONException {
+        org.json.JSONObject o = new org.json.JSONObject();
+        o.put("id", t.id); o.put("title", t.title); o.put("tag", t.tag); o.put("priority", t.priority);
+        o.put("createdAt", t.createdAt); o.put("repeat", t.repeat); o.put("note", t.note); o.put("substeps", t.substeps);
+        if (t.dueAt != null) o.put("dueAt", (long) t.dueAt);
+        if (t.startAt != null) o.put("startAt", (long) t.startAt);
+        if (t.estimatedMinutes != null) o.put("estimatedMinutes", (int) t.estimatedMinutes);
+        if (t.reminderAt != null) o.put("reminderAt", (long) t.reminderAt);
+        if (t.taskDate != null) o.put("taskDate", (long) t.taskDate);
+        if (t.completedAt != null) o.put("completedAt", (long) t.completedAt);
+        if (t.deletedAt != null) o.put("deletedAt", (long) t.deletedAt);
+        return o;
+    }
+    private Task parseTask(org.json.JSONObject o) {
+        Task t = new Task();
+        t.id = o.optLong("id"); t.title = o.optString("title"); t.tag = o.optString("tag", "学习");
+        t.priority = o.optInt("priority", 1); t.createdAt = o.optLong("createdAt", System.currentTimeMillis());
+        t.repeat = o.optString("repeat"); t.note = o.optString("note"); t.substeps = o.optString("substeps", "[]");
+        if (o.has("dueAt")) t.dueAt = o.optLong("dueAt");
+        if (o.has("startAt")) t.startAt = o.optLong("startAt");
+        if (o.has("estimatedMinutes")) t.estimatedMinutes = o.optInt("estimatedMinutes");
+        if (o.has("reminderAt")) t.reminderAt = o.optLong("reminderAt");
+        if (o.has("taskDate")) t.taskDate = o.optLong("taskDate");
+        if (o.has("completedAt")) t.completedAt = o.optLong("completedAt");
+        if (o.has("deletedAt")) t.deletedAt = o.optLong("deletedAt");
+        return t;
+    }
+    private void writeBackup(Uri uri) {
+        TodoDb.IO.execute(() -> {
+            try {
+                org.json.JSONObject backup = new org.json.JSONObject();
+                backup.put("version", 1); backup.put("exportedAt", System.currentTimeMillis());
+                org.json.JSONArray taskArray = new org.json.JSONArray();
+                List<Task> all = TodoDb.get(this).tasks().all();
+                all.addAll(TodoDb.get(this).tasks().trash());
+                for (Task t : all) taskArray.put(taskJson(t));
+                backup.put("tasks", taskArray);
+                org.json.JSONArray reviewArray = new org.json.JSONArray();
+                for (String prefix : new String[]{"0:", "1:", "2:"}) {
+                    for (ReviewRecord r : TodoDb.get(this).reviews().list(prefix)) {
+                        org.json.JSONObject o = new org.json.JSONObject();
+                        o.put("id", r.id); o.put("goals", r.goals); o.put("answers", r.answers);
+                        o.put("finished", r.finished); o.put("updatedAt", r.updatedAt);
+                        reviewArray.put(o);
+                    }
+                }
+                backup.put("reviews", reviewArray);
+                try (OutputStream stream = getContentResolver().openOutputStream(uri, "wt")) {
+                    if (stream == null) throw new IOException("无法写入文件");
+                    stream.write(backup.toString(2).getBytes("UTF-8"));
+                }
+                main.post(() -> toast("备份已保存 · " + taskArray.length() + " 条事项"));
+            } catch (Exception e) { main.post(() -> toast("备份失败，请检查保存位置后重试")); }
+        });
+    }
+    private void readBackup(Uri uri) {
+        TodoDb.IO.execute(() -> {
+            try {
+                StringBuilder text = new StringBuilder();
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(getContentResolver().openInputStream(uri), "UTF-8"))) {
+                    String line; while ((line = reader.readLine()) != null) text.append(line);
+                }
+                org.json.JSONObject backup = new org.json.JSONObject(text.toString());
+                org.json.JSONArray taskArray = backup.getJSONArray("tasks");
+                List<Task> imported = new ArrayList<>();
+                for (int i = 0; i < taskArray.length(); i++) imported.add(parseTask(taskArray.getJSONObject(i)));
+                TodoDb.get(this).tasks().insertAll(imported);
+                int reviewCount = 0;
+                org.json.JSONArray reviewArray = backup.optJSONArray("reviews");
+                if (reviewArray != null) for (int i = 0; i < reviewArray.length(); i++) {
+                    org.json.JSONObject o = reviewArray.getJSONObject(i);
+                    ReviewRecord r = new ReviewRecord();
+                    r.id = o.optString("id"); r.goals = o.optString("goals", "[]"); r.answers = o.optString("answers", "[]");
+                    r.finished = o.optBoolean("finished"); r.updatedAt = o.optLong("updatedAt");
+                    if (!r.id.isEmpty()) { TodoDb.get(this).reviews().save(r); reviewCount++; }
+                }
+                for (Task t : imported) if (t.deletedAt == null && t.completedAt == null && t.reminderAt != null) Reminders.schedule(this, t);
+                TodoWidget.updateAll(this);
+                int taskCount = imported.size(); int reviews = reviewCount;
+                main.post(() -> toast("已恢复 " + taskCount + " 条事项" + (reviews > 0 ? "、" + reviews + " 篇复盘" : "")));
+            } catch (Exception e) { main.post(() -> toast("恢复失败，备份文件格式不正确")); }
+        });
+    }
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
-        if (request != EXPORT_MONTH || result != RESULT_OK || data == null || data.getData() == null) return;
-        Uri uri = data.getData(); YearMonth exporting = pendingExportMonth;
+        if (result != RESULT_OK || data == null || data.getData() == null) return;
+        Uri uri = data.getData();
+        if (request == EXPORT_BACKUP) { writeBackup(uri); return; }
+        if (request == IMPORT_BACKUP) { readBackup(uri); return; }
+        if (request != EXPORT_MONTH) return;
+        YearMonth exporting = pendingExportMonth;
         TodoDb.IO.execute(() -> {
             android.graphics.Bitmap bitmap = null;
             try {

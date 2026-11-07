@@ -1,5 +1,6 @@
 package com.example.todolist;
 
+import androidx.room.ColumnInfo;
 import androidx.room.Entity;
 import androidx.room.PrimaryKey;
 
@@ -18,10 +19,16 @@ public class Task {
     public Long taskDate;
     public Long completedAt;
     public Long deletedAt;
+    /** Recurrence: "" (none), "daily" or "weekly". Completing spawns the next occurrence. */
+    @ColumnInfo(defaultValue = "") public String repeat = "";
+    @ColumnInfo(defaultValue = "") public String note = "";
+    /** JSON array of {"t": title, "done": bool} sub-steps. */
+    @ColumnInfo(defaultValue = "[]") public String substeps = "[]";
     public Task copy() {
         Task t = new Task();
         t.id = id; t.title = title; t.tag = tag; t.priority = priority;
         t.createdAt = createdAt; t.dueAt = dueAt; t.startAt = startAt; t.estimatedMinutes = estimatedMinutes; t.reminderAt = reminderAt; t.taskDate = taskDate; t.completedAt = completedAt; t.deletedAt = deletedAt;
+        t.repeat = repeat; t.note = note; t.substeps = substeps;
         return t;
     }
 }

@@ -2,14 +2,46 @@
 <resources>
     <style name="AppThemeLight" parent="Theme.Material3.Light.NoActionBar">
         <item name="android:fontFamily">@font/book_font</item>
-        <item name="android:colorAccent">#397557</item>
-        <item name="colorPrimary">#397557</item>
-        <item name="android:windowBackground">#F8FAF7</item>
+        <item name="android:colorAccent">#CE8A4E</item>
+        <item name="colorPrimary">#CE8A4E</item>
+        <item name="android:windowBackground">#FBF7F0</item>
     </style>
     <style name="AppThemeDark" parent="Theme.Material3.Dark.NoActionBar">
         <item name="android:fontFamily">@font/book_font</item>
-        <item name="android:colorAccent">#A4D7AD</item>
-        <item name="colorPrimary">#A4D7AD</item>
-        <item name="android:windowBackground">#141E19</item>
+        <item name="android:colorAccent">#EFBE93</item>
+        <item name="colorPrimary">#EFBE93</item>
+        <item name="android:windowBackground">#1B1611</item>
+    </style>
+    <style name="AppThemeLightGreen" parent="AppThemeLight">
+        <item name="android:colorAccent">#6F8F6A</item>
+        <item name="colorPrimary">#6F8F6A</item>
+    </style>
+    <style name="AppThemeDarkGreen" parent="AppThemeDark">
+        <item name="android:colorAccent">#A9C9A4</item>
+        <item name="colorPrimary">#A9C9A4</item>
+    </style>
+    <style name="AppThemeLightBlue" parent="AppThemeLight">
+        <item name="android:colorAccent">#6E93BC</item>
+        <item name="colorPrimary">#6E93BC</item>
+    </style>
+    <style name="AppThemeDarkBlue" parent="AppThemeDark">
+        <item name="android:colorAccent">#A9C4E0</item>
+        <item name="colorPrimary">#A9C4E0</item>
+    </style>
+    <style name="AppThemeLightRose" parent="AppThemeLight">
+        <item name="android:colorAccent">#C4748A</item>
+        <item name="colorPrimary">#C4748A</item>
+    </style>
+    <style name="AppThemeDarkRose" parent="AppThemeDark">
+        <item name="android:colorAccent">#E8B4C0</item>
+        <item name="colorPrimary">#E8B4C0</item>
+    </style>
+    <style name="AppThemeLightViolet" parent="AppThemeLight">
+        <item name="android:colorAccent">#8F7FBE</item>
+        <item name="colorPrimary">#8F7FBE</item>
+    </style>
+    <style name="AppThemeDarkViolet" parent="AppThemeDark">
+        <item name="android:colorAccent">#C4B8E4</item>
+        <item name="colorPrimary">#C4B8E4</item>
     </style>
 </resources>
