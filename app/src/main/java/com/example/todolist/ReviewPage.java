@@ -9,6 +9,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.text.*;
 import android.view.Gravity;
+import android.view.View;
 import android.widget.*;
 import org.json.*;
 import java.time.*;
@@ -36,6 +37,24 @@ final class ReviewPage extends LinearLayout {
         {"今天最有收获的是什么？", "哪里卡住了，为什么？", "明天准备怎样调整？"},
         {"本周目标进展如何？", "哪些方法有效，值得继续？", "主要问题是什么？", "下周优先改善什么？"},
         {"这个月有哪些实际成果？", "哪些目标没达到，原因是什么？", "哪些做法值得保留？", "下个月重点是什么？"}
+    };
+    private static final String[] MOOD_EMOJI = {"😄", "🙂", "😐", "😔", "😤"};
+    private static final String[] MOOD_COLORS = {"#E8B04B", "#6F8F6A", "#A39A8B", "#6E93BC", "#C96A5A"};
+    private static final String[] PROMPTS = {
+        "今天最值得庆祝的一件小事是什么？",
+        "今天有谁让你心存感激？",
+        "今天学到的最有用的一个东西是？",
+        "如果可以重做今天的一件事，你会改什么？",
+        "今天哪个瞬间让你感到平静？",
+        "今天克服了什么小困难？",
+        "明天最想做好的一件事是？",
+        "今天有什么想法值得记下来？",
+        "这周的自己，最想被夸哪一点？",
+        "今天放下了什么执念？",
+        "今天身体感觉怎么样？",
+        "今天哪顿饭最香？",
+        "今天帮助了谁，或被谁帮助？",
+        "今天最意外的收获是？"
     };
 
     ReviewPage(Context context, List<Task> tasks, int type, LocalDate date,
@@ -135,11 +154,23 @@ final class ReviewPage extends LinearLayout {
         TodoDb.IO.execute(() -> {
             ReviewRecord existing = TodoDb.get(getContext()).reviews().find(key);
             List<ReviewRecord> history = detail ? Collections.emptyList() : TodoDb.get(getContext()).reviews().list(type + ":");
+            List<ReviewRecord> monthReviews = Collections.emptyList();
+            ReviewRecord pastToday = null;
+            if (type == 0 && !detail) {
+                monthReviews = TodoDb.get(getContext()).reviews().list("0:" + YearMonth.now());
+                LocalDate today = LocalDate.now();
+                for (int y = 1; y <= 3 && pastToday == null; y++) {
+                    ReviewRecord past = TodoDb.get(getContext()).reviews().find("0:" + today.minusYears(y));
+                    if (past != null && past.finished) pastToday = past;
+                }
+            }
+            List<ReviewRecord> monthData = monthReviews;
+            ReviewRecord pastData = pastToday;
             handler.post(() -> {
                 if (token != generation) return;
                 removeView(loading); record = existing == null ? new ReviewRecord() : existing; record.id = key;
                 goals = parse(record.goals);
-                if (detail) buildContent(); else buildList(history);
+                if (detail) buildContent(); else buildList(history, monthData, pastData);
             });
         });
     }
@@ -159,7 +190,88 @@ final class ReviewPage extends LinearLayout {
                 });
             }).show();
     }
-    private void buildList(List<ReviewRecord> history) {
+    private void buildList(List<ReviewRecord> history, List<ReviewRecord> monthReviews, ReviewRecord pastToday) {
+        if (type == 0) {
+            LinearLayout bento = row(); bento.setBaselineAligned(false);
+            YearMonth ym = YearMonth.now();
+            Map<Integer, ReviewRecord> byDay = new HashMap<>();
+            for (ReviewRecord r : monthReviews) {
+                if (!r.finished) continue;
+                try { byDay.put(LocalDate.parse(r.id.substring(2)).getDayOfMonth(), r); } catch (RuntimeException ignored) {}
+            }
+            LinearLayout monthCard = card();
+            LinearLayout.LayoutParams monthParams = new LayoutParams(0, -2, 1);
+            monthParams.setMargins(0, 0, dp(5), 0);
+            monthCard.addView(text("本月复盘", 13, muted, false)); gap(monthCard, 4);
+            monthCard.addView(text(byDay.size() + " 天", 24, ink, true)); gap(monthCard, 10);
+            int lead = ym.atDay(1).getDayOfWeek().getValue() % 7;
+            int cells = lead + ym.lengthOfMonth();
+            int rowCount = (cells + 6) / 7;
+            int dayNumber = 0;
+            for (int r = 0; r < rowCount; r++) {
+                LinearLayout weekRow = row();
+                for (int c = 0; c < 7; c++) {
+                    int index = r * 7 + c;
+                    View cell = new View(getContext());
+                    GradientDrawable cellBg = new GradientDrawable();
+                    cellBg.setCornerRadius(dp(3));
+                    if (index >= lead && dayNumber < ym.lengthOfMonth()) {
+                        dayNumber++;
+                        ReviewRecord record = byDay.get(dayNumber);
+                        cellBg.setColor(record == null ? soft : record.mood >= 0 ? android.graphics.Color.parseColor(MOOD_COLORS[record.mood]) : accent);
+                        if (dayNumber == LocalDate.now().getDayOfMonth()) cellBg.setStroke(dp(1), accent);
+                    } else cellBg.setColor(android.graphics.Color.TRANSPARENT);
+                    cell.setBackground(cellBg);
+                    LayoutParams cellParams = new LayoutParams(0, dp(10), 1);
+                    cellParams.setMargins(dp(1), dp(1), dp(1), dp(1));
+                    weekRow.addView(cell, cellParams);
+                }
+                monthCard.addView(weekRow);
+            }
+            bento.addView(monthCard, monthParams);
+            LinearLayout streakCard = card();
+            LinearLayout.LayoutParams streakParams = new LayoutParams(0, -2, 1);
+            streakParams.setMargins(dp(5), 0, 0, 0);
+            Set<LocalDate> finishedDays = new HashSet<>();
+            for (ReviewRecord r : history) {
+                if (!r.finished) continue;
+                try { finishedDays.add(LocalDate.parse(r.id.substring(2))); } catch (RuntimeException ignored) {}
+            }
+            LocalDate cursor = LocalDate.now();
+            if (!finishedDays.contains(cursor)) cursor = cursor.minusDays(1);
+            int streak = 0;
+            while (finishedDays.contains(cursor)) { streak++; cursor = cursor.minusDays(1); }
+            streakCard.addView(text("连续复盘", 13, muted, false)); gap(streakCard, 4);
+            streakCard.addView(text("🔥 " + streak + " 天", 24, ink, true)); gap(streakCard, 10);
+            streakCard.addView(text(streak > 0 ? "保持记录，看见自己的变化" : "从今天开始第一篇", 11, muted, false));
+            bento.addView(streakCard, streakParams);
+            addView(bento); gap(this, 12);
+            LinearLayout pastCard = card();
+            pastCard.addView(text("那年今日", 13, muted, false)); gap(pastCard, 6);
+            if (pastToday != null) {
+                LocalDate pastDate = LocalDate.parse(pastToday.id.substring(2));
+                StringBuilder excerpt = new StringBuilder();
+                JSONArray pastAnswers = parse(pastToday.answers);
+                for (int i = 0; i < pastAnswers.length() && excerpt.length() < 48; i++) {
+                    String value = pastAnswers.optString(i).trim();
+                    if (!value.isEmpty()) { if (excerpt.length() > 0) excerpt.append("  "); excerpt.append(value.replace('\n', ' ')); }
+                }
+                TextView pastText = text(pastDate.getYear() + "年的今天 · " + (excerpt.length() == 0 ? "（有记录）" : excerpt), 13, ink, false);
+                pastText.setMaxLines(2); pastText.setEllipsize(TextUtils.TruncateAt.END);
+                pastCard.addView(pastText);
+                pastCard.setOnClickListener(v -> open(pastDate, true));
+            } else {
+                pastCard.addView(text("从今天的复盘开始，明年今天回来看看 🌱", 13, muted, false));
+            }
+            addView(pastCard); gap(this, 12);
+            LinearLayout promptCard = card();
+            promptCard.addView(text("💡 今日一问", 13, muted, false)); gap(promptCard, 6);
+            promptCard.addView(text(PROMPTS[LocalDate.now().getDayOfYear() % PROMPTS.length], 15, ink, true)); gap(promptCard, 8);
+            promptCard.addView(text("点这里，写下今天的答案 →", 12, accent, true));
+            promptCard.setBackground(UiStyle.press(getContext(), surface, 22, accent));
+            promptCard.setOnClickListener(v -> open(LocalDate.now(), false));
+            addView(promptCard); gap(this, 18);
+        }
         if (type != 0) {
             LinearLayout targets = card(); LinearLayout header = row();
             header.addView(text(type == 1 ? "本周目标" : "本月目标", 15, ink, true), new LayoutParams(0, dp(40), 1));
@@ -181,6 +293,7 @@ final class ReviewPage extends LinearLayout {
             try { date = LocalDate.parse(note.id.substring(2)); } catch (RuntimeException e) { continue; }
             LinearLayout item = card();
             LinearLayout header = row(); header.addView(text(dateTitle(date), 15, ink, true), new LayoutParams(0, -2, 1));
+            if (note.mood >= 0 && note.mood < MOOD_EMOJI.length) header.addView(text(MOOD_EMOJI[note.mood], 16, ink, false), new LayoutParams(dp(28), dp(28)));
             if (!note.finished) { TextView draft = text("草稿", 11, accent, false); draft.setPadding(dp(8), dp(4), dp(8), dp(4)); draft.setBackground(background(soft, 8)); header.addView(draft); }
             else { TextView completed = text("✓", 16, accent, true); completed.setGravity(Gravity.CENTER); completed.setContentDescription("已完成复盘"); header.addView(completed, new LayoutParams(dp(24), dp(24))); }
             item.addView(header); gap(item, 10);
@@ -209,6 +322,24 @@ final class ReviewPage extends LinearLayout {
                 targetCard.addView(text(labels[state], 12, state == 1 ? accent : muted, false)); gap(targetCard, 10);
             }
             if (!reading) targetCard.addView(action("选择带入上期未达成目标", this::carryGoals)); addView(targetCard); gap(this, 14);
+        }
+        if (type == 0) {
+            LinearLayout moodCard = card();
+            moodCard.addView(text(reading ? "那天的心情" : "今天的心情", 13, muted, false)); gap(moodCard, 8);
+            LinearLayout moodRow = row();
+            for (int i = 0; i < MOOD_EMOJI.length; i++) {
+                final int index = i;
+                TextView emoji = text(MOOD_EMOJI[i], 24, ink, false); emoji.setGravity(Gravity.CENTER);
+                if (!reading) emoji.setOnClickListener(v -> {
+                    record.mood = record.mood == index ? -1 : index;
+                    styleMoodRow(moodRow);
+                    dirty = true; persist();
+                });
+                moodRow.addView(emoji, new LayoutParams(0, dp(48), 1));
+            }
+            moodCard.addView(moodRow);
+            styleMoodRow(moodRow);
+            addView(moodCard); gap(this, 14);
         }
         LinearLayout facts = card();
         LocalDate end = ReviewPeriod.next(type, start, 1);
@@ -273,6 +404,15 @@ final class ReviewPage extends LinearLayout {
         TextView title = text(goal.optString("title"), bold ? 15 : 13, ink, bold); title.setMaxLines(2); title.setEllipsize(TextUtils.TruncateAt.END);
         LayoutParams params = new LayoutParams(0, -2, 1); params.leftMargin = dp(8); line.addView(title, params); parent.addView(line);
     }
+    private void styleMoodRow(LinearLayout moodRow) {
+        for (int i = 0; i < moodRow.getChildCount(); i++) {
+            TextView emoji = (TextView) moodRow.getChildAt(i);
+            boolean selected = record != null && record.mood == i;
+            GradientDrawable background = background(selected ? soft : android.graphics.Color.TRANSPARENT, 14);
+            if (selected) background.setStroke(dp(1), accent);
+            emoji.setBackground(background);
+        }
+    }
     private void changed() {
         dirty = true; if (status != null) status.setText("正在保存…");
         handler.removeCallbacks(saveDraft); handler.postDelayed(saveDraft, 400);
@@ -282,7 +422,7 @@ final class ReviewPage extends LinearLayout {
         if (record == null || !dirty) return;
         JSONArray content = new JSONArray(); for (EditText answer : answers) content.put(answer.getText().toString());
         ReviewRecord snapshot = new ReviewRecord(); snapshot.id = record.id; snapshot.goals = goals.toString(); snapshot.answers = answers.isEmpty() ? record.answers : content.toString();
-        snapshot.finished = record.finished; snapshot.updatedAt = System.currentTimeMillis();
+        snapshot.finished = record.finished; snapshot.updatedAt = System.currentTimeMillis(); snapshot.mood = record.mood;
         dirty = false; record.goals = snapshot.goals; record.answers = snapshot.answers; record.updatedAt = snapshot.updatedAt;
         String key = snapshot.id;
         TodoDb.IO.execute(() -> {

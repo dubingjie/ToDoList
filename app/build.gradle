@@ -7,8 +7,8 @@ android {
         applicationId 'com.example.todolist'
         minSdk 26
         targetSdk 37
-        versionCode 16
-        versionName '3.5'
+        versionCode 17
+        versionName '3.6'
         testInstrumentationRunner project.findProperty('testRunner') ?: 'com.example.todolist.IntegrationTestRunner'
         javaCompileOptions { annotationProcessorOptions { arguments += ['room.schemaLocation': "$projectDir/schemas".toString()] } }
     }

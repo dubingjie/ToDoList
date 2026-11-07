@@ -699,7 +699,7 @@ public class MainActivity extends AppCompatActivity {
         }
         body.addView(week);
         TextView dayStatus = text("", 13, ink, true);
-        MonthGrid grid = new MonthGrid(this, month, selected, tasks, dark, (date, details) -> {
+        MonthGrid grid = new MonthGrid(this, month, selected, tasks, dark, accent, (date, details) -> {
             selected = date;
             dayStatus.setText(daySummary(date));
             if (details) dayDetails(date);
@@ -1088,7 +1088,7 @@ public class MainActivity extends AppCompatActivity {
                     for (ReviewRecord r : TodoDb.get(this).reviews().list(prefix)) {
                         org.json.JSONObject o = new org.json.JSONObject();
                         o.put("id", r.id); o.put("goals", r.goals); o.put("answers", r.answers);
-                        o.put("finished", r.finished); o.put("updatedAt", r.updatedAt);
+                        o.put("finished", r.finished); o.put("updatedAt", r.updatedAt); o.put("mood", r.mood);
                         reviewArray.put(o);
                     }
                 }
@@ -1119,7 +1119,7 @@ public class MainActivity extends AppCompatActivity {
                     org.json.JSONObject o = reviewArray.getJSONObject(i);
                     ReviewRecord r = new ReviewRecord();
                     r.id = o.optString("id"); r.goals = o.optString("goals", "[]"); r.answers = o.optString("answers", "[]");
-                    r.finished = o.optBoolean("finished"); r.updatedAt = o.optLong("updatedAt");
+                    r.finished = o.optBoolean("finished"); r.updatedAt = o.optLong("updatedAt"); r.mood = o.optInt("mood", -1);
                     if (!r.id.isEmpty()) { TodoDb.get(this).reviews().save(r); reviewCount++; }
                 }
                 for (Task t : imported) if (t.deletedAt == null && t.completedAt == null && t.reminderAt != null) Reminders.schedule(this, t);

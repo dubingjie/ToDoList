@@ -5,7 +5,7 @@ import androidx.room.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-@Database(entities = {Task.class, ReviewRecord.class}, version = 7, exportSchema = true)
+@Database(entities = {Task.class, ReviewRecord.class}, version = 8, exportSchema = true)
 public abstract class TodoDb extends RoomDatabase {
     public abstract TaskDao tasks();
     public abstract ReviewDao reviews();
@@ -31,10 +31,15 @@ public abstract class TodoDb extends RoomDatabase {
     };
     public static TodoDb get(Context context) {
         if (instance == null) synchronized (TodoDb.class) {
-            if (instance == null) instance = Room.databaseBuilder(context.getApplicationContext(), TodoDb.class, "todo.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).build();
+            if (instance == null) instance = Room.databaseBuilder(context.getApplicationContext(), TodoDb.class, "todo.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8).build();
         }
         return instance;
     }
+    public static final androidx.room.migration.Migration MIGRATION_7_8 = new androidx.room.migration.Migration(7, 8) {
+        @Override public void migrate(androidx.sqlite.db.SupportSQLiteDatabase db) {
+            db.execSQL("ALTER TABLE reviews ADD COLUMN mood INTEGER NOT NULL DEFAULT -1");
+        }
+    };
     public static final androidx.room.migration.Migration MIGRATION_6_7 = new androidx.room.migration.Migration(6, 7) {
         @Override public void migrate(androidx.sqlite.db.SupportSQLiteDatabase db) {
             db.execSQL("ALTER TABLE tasks ADD COLUMN repeat TEXT DEFAULT ''");

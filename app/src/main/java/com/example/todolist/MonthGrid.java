@@ -19,12 +19,12 @@ public final class MonthGrid extends ViewGroup {
     private final Listener listener;
     private LocalDate selected;
     private final int ink, accent, border;
-    public MonthGrid(Context c, YearMonth month, LocalDate selected, List<Task> tasks, boolean dark, Listener listener) {
+    public MonthGrid(Context c, YearMonth month, LocalDate selected, List<Task> tasks, boolean dark, int accentColor, Listener listener) {
         super(c); this.selected = selected; this.dark = dark; this.listener = listener;
-        ink = Color.parseColor(dark ? "#E8EFE8" : "#283C31");
-        accent = Color.parseColor(dark ? "#A4D7AD" : "#397557");
-        border = Color.parseColor(dark ? "#405448" : "#D5DED7");
-        setBackgroundColor(Color.parseColor(dark ? "#1D2B24" : "#FFFFFF"));
+        ink = Color.parseColor(dark ? "#F0E8DB" : "#3F3A33");
+        accent = accentColor;
+        border = Color.parseColor(dark ? "#3C342A" : "#EFE6D8");
+        setBackgroundColor(Color.parseColor(dark ? "#292118" : "#FFFFFF"));
         offset = month.atDay(1).getDayOfWeek().getValue() - 1;
         weeks = (offset + month.lengthOfMonth() + 6) / 7;
         for (int day = 1; day <= month.lengthOfMonth(); day++) {
@@ -97,7 +97,7 @@ public final class MonthGrid extends ViewGroup {
                 TextView title = label(task.title, 11); title.setSingleLine(true); title.setEllipsize(TextUtils.TruncateAt.END); title.setLineSpacing(0, 1f);
                 title.setGravity(Gravity.CENTER_VERTICAL); title.setPadding(dp(2), 0, dp(2), 0);
                 GradientDrawable tint = new GradientDrawable();
-                tint.setColor(Color.parseColor(dark ? "#334B3D" : ("工作".equals(task.tag) ? "#EEF2F6" : "#EDF4EB"))); tint.setCornerRadius(dp(3));
+                tint.setColor(Color.parseColor(dark ? "#3A332A" : ("工作".equals(task.tag) ? "#EEF0F6" : "#F5EEE1"))); tint.setCornerRadius(dp(3));
                 title.setBackground(tint); title.setContentDescription(task.title);
                 title.setOnClickListener(v -> choose(date, true));
                 LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, item - gap); p.bottomMargin = gap; addView(title, p);
@@ -112,13 +112,13 @@ public final class MonthGrid extends ViewGroup {
         void style() {
             boolean active = date.equals(selected); setSelected(active);
             GradientDrawable shape = new GradientDrawable();
-            shape.setColor(Color.TRANSPARENT); shape.setStroke(dp(1), Color.parseColor(dark ? "#2B3A31" : "#E5EDE1")); setBackground(shape);
+            shape.setColor(Color.TRANSPARENT); shape.setStroke(dp(1), Color.parseColor(dark ? "#3C342A" : "#EFE6D8")); setBackground(shape);
             if (number != null) {
                 GradientDrawable chip = new GradientDrawable(); chip.setShape(GradientDrawable.OVAL);
                 boolean today = date.equals(LocalDate.now());
                 int todayBackground = getContext().getColor(dark ? R.color.calendar_today_background_dark : R.color.calendar_today_background);
                 chip.setColor(active ? accent : todayBackground); number.setBackground(active || today ? chip : null);
-                number.setTextColor(active ? (dark ? Color.parseColor("#121C18") : Color.WHITE) : date.equals(LocalDate.now()) ? accent : ink);
+                number.setTextColor(active ? (dark ? Color.parseColor("#1B1611") : Color.WHITE) : date.equals(LocalDate.now()) ? accent : ink);
             }
         }
     }
